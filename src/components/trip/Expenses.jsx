@@ -6,11 +6,11 @@ const Expenses = ({ tripId }) => {
   const [newExpense, setNewExpense] = useState({ payer: '', amount: '', purpose: '' });
 
   useEffect(() => {
-    API.get(`/trips/${tripId}/expenses`).then((res) => setExpenses(res.data));
+    API.get(`/expenses/${tripId}`).then((res) => setExpenses(res.data));
   }, [tripId]);
 
   const addExpense = async () => {
-    const res = await API.post(`/trips/${tripId}/expenses`, newExpense);
+    const res = await API.post(`/expenses`, newExpense);
     setExpenses([...expenses, res.data]);
     setNewExpense({ payer: '', amount: '', purpose: '' });
   };
@@ -19,9 +19,8 @@ const Expenses = ({ tripId }) => {
     <div>
       <h3 className="text-xl font-bold mb-4">Expenses</h3>
       <div className="mb-4">
-        <input type="text" placeholder="Payer" value={newExpense.payer} onChange={(e) => setNewExpense({ ...newExpense, payer: e.target.value })} className="px-4 py-2 border rounded mr-2" />
         <input type="number" placeholder="Amount" value={newExpense.amount} onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })} className="px-4 py-2 border rounded mr-2" />
-        <input type="text" placeholder="Purpose" value={newExpense.purpose} onChange={(e) => setNewExpense({ ...newExpense, purpose: e.target.value })} className="px-4 py-2 border rounded mr-2" />
+        <input type="text" placeholder="Reason" value={newExpense.purpose} onChange={(e) => setNewExpense({ ...newExpense, purpose: e.target.value })} className="px-4 py-2 border rounded mr-2" />
         <button onClick={addExpense} className="bg-blue-600 text-white px-4 py-2 rounded">Add Expense</button>
       </div>
       <ul>

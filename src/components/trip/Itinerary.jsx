@@ -5,11 +5,11 @@ const Itinerary = ({ tripId }) => {
   const [items, setItems] = useState([]);
 
   useEffect(() => {
-    API.get(`/trips/${tripId}/itinerary`).then((res) => setItems(res.data));
+    API.get(`/itineraries/${tripId}`).then((res) => setItems(res.data));
   }, [tripId]);
 
   const exportPdf = async () => {
-    const res = await API.get(`/trips/${tripId}/itinerary/pdf`, { responseType: 'blob' });
+    const res = await API.get(`/itineraries/${tripId}/pdf`, { responseType: 'blob' });
     const url = window.URL.createObjectURL(new Blob([res.data]));
     const link = document.createElement('a');
     link.href = url;

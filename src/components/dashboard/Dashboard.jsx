@@ -1,4 +1,6 @@
+// src/components/dashboard/Dashboard.jsx
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import API from '../../api/api';
 import TripCard from './TripCard';
 
@@ -17,13 +19,22 @@ const Dashboard = () => {
     })();
   }, []);
 
-  const filteredTrips = trips.filter(trip =>
+  const filteredTrips = trips?.filter(trip =>
     trip.title.toLowerCase().includes(filter.toLowerCase())
   );
 
   return (
     <div className="pt-20 pb-8 px-4 md:px-8 bg-gray-50 dark:bg-gray-900 min-h-screen">
-      <h1 className="text-4xl font-bold text-center mb-8 text-gray-800 dark:text-gray-200">Your Trips</h1>
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-4xl font-bold text-gray-800 dark:text-gray-200">Your Trips</h1>
+        {/* Create Trip Button */}
+        <Link
+          to="/trips/create"
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
+        >
+          Create New Trip
+        </Link>
+      </div>
       <div className="max-w-3xl mx-auto mb-6">
         <input
           type="text"

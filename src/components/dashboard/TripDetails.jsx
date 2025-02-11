@@ -3,13 +3,15 @@ import { useParams } from 'react-router-dom';
 import API from '../../api/api';
 import { Tab } from '@headlessui/react';
 import { useTripAccess } from '../../hooks/useTripAccess';
+import { useAuth } from '../../hooks/useAuth';
 import Itinerary from '../trip/Itinerary';
 import PackingChecklist from '../trip/PackingChecklist';
 import Expenses from '../trip/Expenses';
-import Reviews from '../social/Reviews';
+import GroupChat from '../chat/GroupChat';
 import Voting from '../voting/Voting';
 import Weather from '../layout/Weather';
 import PersonalItinerary from '../trip/PersonalItinerary';
+import JoinRequests from '../trip/JoinRequests.jsx';
 
 function classNames(...classes) {
   return classes.filter(Boolean).join(' ');
@@ -18,20 +20,21 @@ function classNames(...classes) {
 // Protected tabs – each receives tripId and other props
 const protectedTabs = [
   { label: 'Group Itinerary', content: <Itinerary tripId={null} /> },
-  { label: 'Personal Itinerary', content: <PersonalItinerary /> },
+  { label: 'Personal Itinerary', content: <PersonalItinerary tripId={null} /> },
   { label: 'Packing Checklist', content: <PackingChecklist tripId={null} /> },
   { label: 'Expenses', content: <Expenses tripId={null} /> },
-  { label: 'Reviews', content: <Reviews tripId={null} revieweeId={null} /> },
+  { label: 'Group Chat', content: <GroupChat tripId={null} /> },
   { label: 'Voting', content: <Voting options={[
     { value: 'itinerary', label: 'Itinerary Vote', votes: 0 },
     { value: 'checklist', label: 'Checklist Vote', votes: 0 }
-  ]} onVote={(v) => { console.log('Voted:', v); }} currentVote={null} /> },
+  ]} onVote={(v) => { console.log('Voted:', v); }} currentVote={null} organizerId={null} /> },
 ];
 
 const publicContent = <p className="text-gray-700 dark:text-gray-300">Public trip details. Join the trip to view full details.</p>;
 
 const TripDetails = () => {
   const { id } = useParams();
+  const { user } = useAuth();
   const [trip, setTrip] = useState(null);
   const isMember = useTripAccess(trip);
   const [isOrganizer, setIsOrganizer] = useState(false);
@@ -41,9 +44,7 @@ const TripDetails = () => {
       try {
         const { data } = await API.get(`/trips/${id}`);
         setTrip(data);
-        // Check if the current user is the organizer
-        const currentUser = JSON.parse(localStorage.getItem('token')) && data.organizer; // Simplified check; use useAuth hook for full implementation
-        setIsOrganizer(data.organizer.id === (data.currentUserId || 0));
+        setIsOrganizer(data.organizer === (user.id || 0));
       } catch (err) {
         console.error('Error fetching trip details:', err);
       }
@@ -55,8 +56,15 @@ const TripDetails = () => {
   // Extend tabs with required props
   const extendedTabs = protectedTabs.map((tab) => ({
     label: tab.label,
-    content: React.cloneElement(tab.content, { tripId: trip.id, revieweeId: trip.organizer.id })
+    content: React.cloneElement(tab.content, { tripId: trip.id, userId: user.id })
   }));
+
+  if (isOrganizer) {
+    extendedTabs.push({
+      label: 'Join Requests',
+      content: <JoinRequests tripId={trip.id} initialRequests={trip.joinRequests} />
+    });
+  }
 
   return (
     <div className="pt-20 pb-8 px-4 md:px-8 bg-gray-50 dark:bg-gray-900 min-h-screen">
@@ -66,13 +74,6 @@ const TripDetails = () => {
           <h1 className="text-4xl font-bold mb-2 text-gray-800 dark:text-gray-200">{trip.title}</h1>
           <p className="text-gray-600 dark:text-gray-300 mb-4">{trip.destination}</p>
           <Weather destination={trip.destination} />
-          {isOrganizer && (
-            <div className="mb-4">
-              <button className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition">
-                Edit Trip
-              </button>
-            </div>
-          )}
           {isMember ? (
             <Tab.Group>
               <Tab.List className="flex space-x-1 border-b">

@@ -6,24 +6,24 @@ const PackingChecklist = ({ tripId }) => {
   const [newItem, setNewItem] = useState('');
 
   useEffect(() => {
-    API.get(`/trips/${tripId}/checklist`).then((res) => setItems(res.data));
+    API.get(`/checklists/${tripId}`).then((res) => setItems(res.data));
   }, [tripId]);
 
   const addItem = async () => {
     if (newItem.trim()) {
-      const res = await API.post(`/trips/${tripId}/checklist`, { itemName: newItem });
+      const res = await API.post(`/checklists/${tripId}`, { itemName: newItem });
       setItems([...items, res.data]);
       setNewItem('');
     }
   };
 
   const toggleItem = async (itemId) => {
-    const res = await API.put(`/trips/${tripId}/checklist/${itemId}/toggle`);
+    const res = await API.put(`/checklists/${itemId}/toggle`);
     setItems(items.map((item) => (item.id === itemId ? res.data : item)));
   };
 
   const deleteItem = async (itemId) => {
-    await API.delete(`/trips/${tripId}/checklist/${itemId}`);
+    await API.delete(`/checklists/${itemId}`);
     setItems(items.filter((item) => item.id !== itemId));
   };
 

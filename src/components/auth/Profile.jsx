@@ -8,7 +8,7 @@ const Profile = () => {
   const [tempProfile, setTempProfile] = useState({});
 
   useEffect(() => {
-    API.get('/users/me')
+    API.get('/auth/me')
       .then(res => {
         setProfile(res.data);
         setTempProfile(res.data);
@@ -53,11 +53,11 @@ const Profile = () => {
                   <input type="email" name="email" value={tempProfile.email} onChange={onChange}
                     className="w-full px-4 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-600 transition" />
                 </div>
-                <div className="mb-4">
+                {/* <div className="mb-4">
                   <label className="block text-gray-700 dark:text-gray-300">Bio</label>
                   <textarea name="bio" value={tempProfile.bio} onChange={onChange}
                     className="w-full px-4 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-600 transition" maxLength="512"></textarea>
-                </div>
+                </div> */}
                 <button onClick={handleSave} className="px-4 py-2 bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 transition">
                   Save Changes
                 </button>

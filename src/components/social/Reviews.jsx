@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import API from '../../api/api';
 
-const Reviews = ({ tripId, revieweeId }) => {
+const Reviews = ({ reviewerId, revieweeId }) => {
   const [reviews, setReviews] = useState([]);
   const [newReview, setNewReview] = useState({ rating: 5, comment: '' });
 
@@ -10,7 +10,7 @@ const Reviews = ({ tripId, revieweeId }) => {
   }, [revieweeId]);
 
   const submitReview = async () => {
-    const res = await API.post('/reviews', { tripId, reviewee: revieweeId, ...newReview });
+    const res = await API.post('/reviews', { reviewer: reviewerId, reviewee: revieweeId, ...newReview });
     setReviews([...reviews, res.data]);
     setNewReview({ rating: 5, comment: '' });
   };

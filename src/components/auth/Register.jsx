@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import API from '../../api/api';
 import Step1 from './register-steps/Step1';
 import Step2 from './register-steps/Step2';
@@ -23,6 +24,8 @@ const Register = () => {
     bio: ''
   });
   const [errors, setErrors] = useState({});
+  const navigate = useNavigate();
+  
 
   const onChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -46,7 +49,7 @@ const Register = () => {
     if (!isStepValid) return;
     try {
       await API.post('/auth/register', formData);
-      API.navigate('/login');
+      navigate('/login');
     } catch (err) {
       setErrors({ form: 'Registration failed. Please try again.' });
     }

@@ -7,13 +7,20 @@ export const useStompClient = (endpoint) => {
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
+    // Retrieve the JWT token from localStorage
+    const token = localStorage.getItem('token');
+
     const stompClient = new Client({
       webSocketFactory: () => new SockJS(endpoint),
       reconnectDelay: 5000,
       heartbeatIncoming: 4000,
       heartbeatOutgoing: 4000,
-      debug: function (str) {
+      debug: (str) => {
         console.log(str);
+      },
+      // Add connectHeaders so that the JWT is sent during the CONNECT phase.
+      connectHeaders: {
+        Authorization: token ? `Bearer ${token}` : '',
       },
       onConnect: () => {
         setConnected(true);

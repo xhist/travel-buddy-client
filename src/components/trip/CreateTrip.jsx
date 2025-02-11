@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import API from '../../api/api';
 
 const CreateTrip = () => {
@@ -10,6 +11,7 @@ const CreateTrip = () => {
     description: ''
   });
   const [errors, setErrors] = useState({});
+  const navigate = useNavigate();
 
   const onChange = (e) => {
     setTripData({ ...tripData, [e.target.name]: e.target.value });
@@ -89,7 +91,7 @@ const CreateTrip = () => {
     if (!validate()) return;
     try {
       const response = await API.post('/trips', tripData);
-      API.navigate(`/trip/${response.data.id}`);
+      navigate(`/trip/${response.data.id}`);
     } catch (error) {
       console.error('Error creating trip:', error);
       setErrors({ form: 'An error occurred while creating the trip. Please try again.' });

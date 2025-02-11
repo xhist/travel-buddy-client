@@ -25,7 +25,7 @@ const GroupChat = ({ tripId }) => {
     });
 
     // Load previous messages
-    loadPreviousMessages();
+    // loadPreviousMessages();
 
     return () => {
       if (subscription) {

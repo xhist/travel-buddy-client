@@ -76,7 +76,7 @@ const UserDropdown = () => {
   };
 
   const menuItems = [
-    { label: 'Profile', path: '/profile' },
+    { label: 'Profile', path: `/profile/${user.id}` },
     { label: 'Logout', onClick: handleLogout }
   ];
 

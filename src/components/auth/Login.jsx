@@ -41,16 +41,20 @@ const Login = () => {
 
     setIsLoading(true);
     setErrors({});
-
-    const response = await API.post('/auth/login', creds);
-    const { token, userDto } = response.data;
-    console.log('User logged in:', userDto);
-    
-    // Store token and user data
-    localStorage.setItem('token', token);
-    login({ token, user: userDto });
-    
-    navigate('/');
+    try {
+      const response = await API.post('/auth/login', creds);
+      const { token, userDto } = response.data;
+      console.log('User logged in:', userDto);
+      
+      // Store token and user data
+      localStorage.setItem('token', token);
+      login({ token, user: userDto });
+      
+      navigate('/');
+    } catch (err) {
+      setErrors({ form: 'Login failed. Please try again.' });
+      console.log('Login error:', err);
+    }
   };
 
   return (

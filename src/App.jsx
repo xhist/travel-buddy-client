@@ -20,47 +20,50 @@ import AdminUsers from './components/admin/AdminUsers';
 import AdminTrips from './components/admin/AdminTrips';
 import { AuthProvider } from './hooks/useAuth';
 import { Toaster } from 'react-hot-toast';
+import { ChatProvider } from './components/contexts/ChatContext';
 
 function App() {
   return (
-    <AuthProvider>
-      <Router>
+    <Router>
+      <AuthProvider>
         <ErrorBoundary>
-          <div className="min-h-screen flex flex-col">
-            <Navbar />
-            <main className="flex-1 pt-16">
-              <Routes>
-                <Route path="/login" element={<Login />} />
-                <Route path="/register" element={<Register />} />
-                <Route 
-                  path="/*" 
-                  element={
-                    <ProtectedRoute>
-                      <Routes>
-                        <Route path="/" element={<Dashboard />} />
-                        <Route path="/profile" element={<Profile />} />
-                        <Route path="/trips/create" element={<CreateTrip /> } />
-                        <Route path="/trips/:id" element={<TripDetails />} />
-                        <Route path="/trips/:id/chat" element={<GroupChat />} />
-                        <Route path="/friends/:friendId/chat" element={<PrivateChat />} />
-                        <Route path="/friends" element={<Friends />} />
-                        <Route path="/calendar" element={<CalendarSync tripId={1} />} />
-                        <Route path="/admin" element={<AdminDashboard />} />
-                        <Route path="/admin/users" element={<AdminUsers />} />
-                        <Route path="/admin/trips" element={<AdminTrips />} />
-                      </Routes>
-                      <Notifications />
-                    </ProtectedRoute>
-                  }
-                />
-              </Routes>
-            </main>
-            <Toaster position="bottom-left" />
-            <Footer />
-          </div>
+            <div className="min-h-screen flex flex-col">
+              <Navbar />
+              <main className="flex-1 pt-16">
+                <Routes>
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/register" element={<Register />} />
+                  <Route 
+                    path="/*" 
+                    element={
+                      <ProtectedRoute>
+                        <ChatProvider>
+                          <Routes>
+                            <Route path="/" element={<Dashboard />} />
+                            <Route path="/profile/:username" element={<Profile />} />
+                            <Route path="/trips/create" element={<CreateTrip /> } />
+                            <Route path="/trips/:id" element={<TripDetails />} />
+                            <Route path="/trips/:id/chat" element={<GroupChat />} />
+                            <Route path="/friends/:friendId/chat" element={<PrivateChat />} />
+                            <Route path="/friends" element={<Friends />} />
+                            <Route path="/calendar" element={<CalendarSync tripId={1} />} />
+                            <Route path="/admin" element={<AdminDashboard />} />
+                            <Route path="/admin/users" element={<AdminUsers />} />
+                            <Route path="/admin/trips" element={<AdminTrips />} />
+                          </Routes>
+                          <Notifications />
+                        </ChatProvider>
+                      </ProtectedRoute>
+                    }
+                  />
+                </Routes>
+              </main>
+              <Toaster position="bottom-left" />
+              <Footer />
+            </div>
         </ErrorBoundary>
-      </Router>
-    </AuthProvider>
+      </AuthProvider>
+    </Router> 
   );
 }
 

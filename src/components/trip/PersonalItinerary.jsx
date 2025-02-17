@@ -1,49 +1,69 @@
 import React, { useState, useEffect } from 'react';
 import API from '../../api/api';
 import { useAuth } from '../../hooks/useAuth';
+import { PlusCircle, X } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 const PersonalItinerary = ({ tripId }) => {
-  const [itinerary, setItinerary] = useState([]);
-  const [newActivity, setNewActivity] = useState({ 
-    activityName: ''
-  });
-  const { user } = useAuth();
+  const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [activityName, setActivityName] = useState('');
+  const { user } = useAuth();
 
   useEffect(() => {
-    const fetchItinerary = async () => {
-      if (!tripId || !user?.id) return;
-      
-      try {
-        setLoading(true);
-        const res = await API.get(`/itineraries/${tripId}/${user.id}`);
-        setItinerary(res.data);
-      } catch (err) {
-        console.error('Error fetching itinerary:', err);
-        setError('Failed to load itinerary');
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchItinerary();
   }, [tripId, user?.id]);
 
-  const addActivity = async () => {
+  const fetchItinerary = async () => {
     if (!tripId || !user?.id) return;
-    
-    if (newActivity.activityName.trim()) {
-      try {
-        const res = await API.post(`/itineraries/${tripId}/${user.id}`, newActivity);
-        setItinerary([...itinerary, res.data]);
-        setNewActivity({ 
-          activityName: ''
-        });
-      } catch (err) {
-        console.error('Error adding activity:', err);
-        setError('Failed to add activity');
+
+    try {
+      setLoading(true);
+      const response = await API.get(`/itineraries/${tripId}/${user.id}`);
+      setItems(response.data || []);
+    } catch (err) {
+      console.error('Error fetching personal itinerary:', err);
+      toast.error('Failed to load personal itinerary');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const addItem = async (e) => {
+    e.preventDefault();
+    if (!activityName.trim()) {
+      toast.error('Please enter an activity name');
+      return;
+    }
+
+    try {
+      const response = await API.post(`/itineraries/${tripId}/${user.id}`, {
+        activityName: activityName.trim(),
+        tripId,
+        userId: user.id
+      });
+
+      if (response.data) {
+        setItems(response.data);
+        setActivityName('');
+        toast.success('Activity added successfully');
       }
+    } catch (err) {
+      console.error('Error adding activity:', err);
+      toast.error('Failed to add activity');
+    }
+  };
+
+  const deleteItem = async (itemId) => {
+    try {
+      const response = await API.delete(`/itineraries/${itemId}`);
+      if (response.status === 200) {
+        setItems(items.filter(item => item.id !== itemId));
+        toast.success('Activity deleted successfully');
+      }
+    } catch (err) {
+      console.error('Error deleting activity:', err);
+      toast.error('Failed to delete activity');
     }
   };
 
@@ -55,43 +75,48 @@ const PersonalItinerary = ({ tripId }) => {
     );
   }
 
-  if (error) {
-    return (
-      <div className="text-red-600 p-4">
-        {error}
-      </div>
-    );
-  }
-
   return (
-    <div>
-      <h3 className="text-xl font-bold mb-4">Personal Itinerary</h3>
-      <div className="mb-4 space-y-3">
-        <input 
-          type="text" 
-          placeholder="Activity Name" 
-          value={newActivity.activityName} 
-          onChange={(e) => setNewActivity({ ...newActivity, activityName: e.target.value })} 
-          className="px-4 py-2 border rounded w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <button 
-          onClick={addActivity} 
-          className="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
-        >
-          Add Activity
-        </button>
-      </div>
+    <div className="space-y-6">
+      <form onSubmit={addItem} className="space-y-4">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={activityName}
+            onChange={(e) => setActivityName(e.target.value)}
+            placeholder="Enter personal activity..."
+            className="flex-1 px-4 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <button
+            type="submit"
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition flex items-center gap-2"
+          >
+            <PlusCircle className="w-5 h-5" />
+            Add Activity
+          </button>
+        </div>
+      </form>
 
-      {itinerary.length === 0 ? (
-        <p className="text-gray-500 text-center">No activities added yet.</p>
+      {items.length === 0 ? (
+        <p className="text-gray-500 text-center p-4">No personal activities planned yet.</p>
       ) : (
-        <ul className="space-y-4">
-          {itinerary.map((activity) => (
-            <li key={activity.id} className="border rounded-lg p-4 shadow-sm">
-              <div className="font-bold text-lg">{activity.activityName}</div>
-            </li>
+        <div className="space-y-4">
+          {items.map((item) => (
+            <div
+              key={item.id}
+              className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 flex justify-between items-center"
+            >
+              <span className="text-gray-800 dark:text-gray-200">
+                {item.activityName}
+              </span>
+              <button
+                onClick={() => deleteItem(item.id)}
+                className="p-2 text-red-500 hover:text-red-700 transition-colors rounded-full hover:bg-red-50 dark:hover:bg-red-900/20"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );

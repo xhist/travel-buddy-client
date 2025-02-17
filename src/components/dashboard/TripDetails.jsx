@@ -22,12 +22,8 @@ const protectedTabs = [
   { label: 'Group Itinerary', content: <Itinerary tripId={null} /> },
   { label: 'Personal Itinerary', content: <PersonalItinerary tripId={null} /> },
   { label: 'Packing Checklist', content: <PackingChecklist tripId={null} /> },
-  { label: 'Expenses', content: <Expenses tripId={null} /> },
-  { label: 'Group Chat', content: <GroupChat tripId={null} /> },
-  { label: 'Voting', content: <Voting options={[
-    { value: 'itinerary', label: 'Itinerary Vote', votes: 0 },
-    { value: 'checklist', label: 'Checklist Vote', votes: 0 }
-  ]} onVote={(v) => { console.log('Voted:', v); }} currentVote={null} organizerId={null} /> },
+  { label: 'Expenses', content: <Expenses tripId={null} isOrganizer={null} /> },
+  { label: 'Group Chat', content: <GroupChat tripId={null} /> }
 ];
 
 const publicContent = <p className="text-gray-700 dark:text-gray-300">Public trip details. Join the trip to view full details.</p>;
@@ -56,13 +52,13 @@ const TripDetails = () => {
   // Extend tabs with required props
   const extendedTabs = protectedTabs.map((tab) => ({
     label: tab.label,
-    content: React.cloneElement(tab.content, { tripId: trip.id, userId: user.id })
+    content: React.cloneElement(tab.content, { tripId: trip.id, userId: user.id, isOrganizer: isOrganizer })
   }));
 
   if (isOrganizer) {
     extendedTabs.push({
       label: 'Join Requests',
-      content: <JoinRequests tripId={trip.id} initialRequests={trip.joinRequests} />
+      content: <JoinRequests tripId={trip.id} />
     });
   }
 

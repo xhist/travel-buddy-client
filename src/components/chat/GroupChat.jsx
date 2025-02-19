@@ -3,6 +3,7 @@ import { useStompClient } from '../../hooks/useStompClient';
 import { useAuth } from '../../hooks/useAuth';
 import { motion, AnimatePresence } from 'framer-motion';
 import API from '../../api/api';
+import OnlineUsers from './OnlineUsers';
 import { 
   Send, 
   Image, 
@@ -15,6 +16,7 @@ import {
   Link as LinkIcon,
   MoreVertical,
   X,
+  MenuIcon,
   Vote
 } from 'lucide-react';
 import data from '@emoji-mart/data';
@@ -127,6 +129,16 @@ const GroupChat = ({ tripId, isOrganizer }) => {
   const [showPollForm, setShowPollForm] = useState(false);
   const [editingPoll, setEditingPoll] = useState(null);
   const [polls, setPolls] = useState([]);
+  const [showSidebar, setShowSidebar] = useState(true);
+  const [isMobile, setIsMobile] = useState(window.outerWidth < 1024);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     if (!client || !connected) return;
@@ -323,9 +335,14 @@ const GroupChat = ({ tripId, isOrganizer }) => {
               <span>{messages.length} messages</span>
             </div>
           </div>
-          <button className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors">
-            <MoreVertical className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-          </button>
+          {isMobile && (
+            <button
+              onClick={() => setShowSidebar(!showSidebar)}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+            >
+              <MoreVertical className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+            </button>
+          )}
         </div>
 
         {/* Messages Area */}
@@ -509,6 +526,25 @@ const GroupChat = ({ tripId, isOrganizer }) => {
           </div>
         </div>
       </div>
+
+      {/* Online Users Sidebar */}
+      <AnimatePresence>
+        {showSidebar && (
+          <motion.div
+            initial={isMobile ? { x: '100%' } : false}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ type: 'spring', damping: 20 }}
+            className={`${
+              isMobile
+                ? 'fixed inset-y-0 right-0 w-80 z-40'
+                : 'w-80 hidden md:block'
+            } bg-white dark:bg-gray-800 border-l dark:border-gray-700`}
+          >
+            <OnlineUsers tripId={tripId} />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

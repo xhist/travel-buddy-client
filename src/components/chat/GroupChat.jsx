@@ -360,14 +360,6 @@ const GroupChat = ({ tripId, isOrganizer }) => {
 
         {/* Input Area */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {messages.map((message, idx) => (
-            <MessageBubble
-              key={`msg-${idx}`}
-              message={message}
-              currentUser={user}
-              onReaction={handleReaction}
-            />
-          ))}
           
           {/* Polls */}
           {polls.map((poll) => (

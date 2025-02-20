@@ -53,7 +53,7 @@ const PrivateChatPopup = ({ recipient, onClose, position }) => {
     const loadMessages = async () => {
       try {
         const response = await API.get(
-          `/api/chat/private/${user.username}/${recipient.username}`
+          `/chat/private/${user.username}/${recipient.username}`
         );
         setMessages(response.data);
       } catch (err) {
@@ -90,7 +90,7 @@ const PrivateChatPopup = ({ recipient, onClose, position }) => {
   const markMessagesAsRead = async () => {
     try {
       await API.post(
-        `/api/chat/markAsRead/${recipient.username}/${user.username}`
+        `/chat/markAsRead/${recipient.username}`
       );
     } catch (err) {
       console.error('Error marking messages as read:', err);

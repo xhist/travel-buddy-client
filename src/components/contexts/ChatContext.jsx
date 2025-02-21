@@ -1,9 +1,9 @@
-import React, { createContext, useState, useEffect, useContext } from 'react';
+import React, { createContext, useState, useContext, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { useStompClient } from '../../hooks/useStompClient';
 import PrivateChatPopup from '../chat/PrivateChatPopup';
 
-export const ChatContext = createContext();
+const ChatContext = createContext(null);
 
 export const useChatContext = () => {
   const context = useContext(ChatContext);
@@ -15,10 +15,11 @@ export const useChatContext = () => {
 
 export const ChatProvider = ({ children }) => {
   const [activeChats, setActiveChats] = useState([]);
-  const [isMobileUsersOpen, setIsMobileUsersOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { user } = useAuth();
-  const { client, connected } = useStompClient('http://localhost:8080/ws');
+  const { client, connected } = useStompClient();
 
+  // Handle incoming private messages
   useEffect(() => {
     if (!client || !connected || !user) return;
 
@@ -30,6 +31,7 @@ export const ChatProvider = ({ children }) => {
           const otherUser = receivedMessage.sender === user.username ? 
             receivedMessage.recipient : receivedMessage.sender;
 
+          // Auto-open chat window if not already open
           if (!activeChats.some(chat => chat.username === otherUser)) {
             const newUser = {
               username: otherUser,
@@ -52,9 +54,16 @@ export const ChatProvider = ({ children }) => {
 
   const handleStartChat = (recipient) => {
     if (!activeChats.some(chat => chat.username === recipient.username)) {
-      setActiveChats(prev => [...prev, recipient]);
+      // Limit number of active chats on mobile
+      if (window.innerWidth < 768 && activeChats.length >= 2) {
+        const newChats = [...activeChats];
+        newChats.shift(); // Remove oldest chat
+        setActiveChats([...newChats, recipient]);
+      } else {
+        setActiveChats(prev => [...prev, recipient]);
+      }
     }
-    setIsMobileUsersOpen(false);
+    setIsSidebarOpen(false);
   };
 
   const handleCloseChat = (username) => {
@@ -65,11 +74,11 @@ export const ChatProvider = ({ children }) => {
     <ChatContext.Provider value={{ 
       activeChats, 
       handleStartChat, 
-      isMobileUsersOpen, 
-      setIsMobileUsersOpen 
+      isSidebarOpen, 
+      setIsSidebarOpen 
     }}>
       {children}
-      <div className="fixed bottom-4 right-20 z-40 flex flex-row-reverse gap-2 flex-wrap sm:flex-nowrap">
+      <div className="fixed bottom-4 right-4 z-40 flex flex-row-reverse gap-4 flex-wrap sm:flex-nowrap">
         {activeChats.map((chat, index) => (
           <PrivateChatPopup
             key={chat.username}
@@ -82,3 +91,5 @@ export const ChatProvider = ({ children }) => {
     </ChatContext.Provider>
   );
 };
+
+export default ChatContext;

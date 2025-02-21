@@ -1,8 +1,11 @@
+// src/hooks/useStompClient.js
 import { useState, useEffect } from 'react';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 
-export const useStompClient = (endpoint) => {
+const SOCKET_URL = 'http://localhost:8080/ws'; // Point to the Spring WebSocket endpoint
+
+export const useStompClient = () => {
   const [client, setClient] = useState(null);
   const [connected, setConnected] = useState(false);
 
@@ -10,53 +13,67 @@ export const useStompClient = (endpoint) => {
     const token = localStorage.getItem('token');
 
     const stompClient = new Client({
-      webSocketFactory: () => new SockJS(endpoint),
+      webSocketFactory: () => new SockJS(SOCKET_URL),
       connectHeaders: {
-        'Authorization': token ? `Bearer ${token}` : ''
+        Authorization: `Bearer ${token}`
+      },
+      debug: (str) => {
+        console.log(str);
       },
       reconnectDelay: 5000,
       heartbeatIncoming: 4000,
       heartbeatOutgoing: 4000,
-      debug: (str) => {
-        console.log(str);
-      },
-      onConnect: (frame) => {
-        setConnected(true);
+      onConnect: () => {
         console.log('STOMP client connected');
+        setConnected(true);
       },
       onDisconnect: () => {
-        setConnected(false);
         console.log('STOMP client disconnected');
+        setConnected(false);
       },
       onStompError: (frame) => {
-        console.error('Broker reported error: ' + frame.headers['message']);
-        console.error('Additional details: ' + frame.body);
+        console.error('STOMP protocol error:', frame);
+      },
+      beforeConnect: () => {
+        // Add Authorization header to the WebSocket handshake request
+        const socket = stompClient.webSocket;
+        if (socket && socket.readyState === WebSocket.CONNECTING) {
+          socket._transport.options = {
+            ...socket._transport.options,
+            headers: {
+              Authorization: `Bearer ${token}`
+            }
+          };
+        }
       }
     });
 
-    // Modify the publish method to always include the authorization header
+    // Add interceptor for adding Authorization header to all STOMP frames
     const originalPublish = stompClient.publish;
     stompClient.publish = function(parameters) {
-      const currentToken = localStorage.getItem('token');
       const message = {
         ...parameters,
         headers: {
           ...parameters.headers,
-          'Authorization': currentToken ? `Bearer ${currentToken}` : ''
+          Authorization: `Bearer ${token}`
         }
       };
       return originalPublish.call(this, message);
     };
 
-    stompClient.activate();
-    setClient(stompClient);
+    try {
+      stompClient.activate();
+      setClient(stompClient);
+    } catch (error) {
+      console.error('Error activating STOMP client:', error);
+    }
 
     return () => {
       if (stompClient) {
         stompClient.deactivate();
       }
     };
-  }, [endpoint]);
+  }, []);
 
   return { client, connected };
 };

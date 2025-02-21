@@ -1,72 +1,69 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStompClient } from '../../hooks/useStompClient';
 import { useAuth } from '../../hooks/useAuth';
-import { X, Send, Minimize2, Maximize2 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import API from '../../api/api';
+import { useChatMessages } from '../../hooks/useChatMessages';
+import { MessageList } from './layouts/MessageList';
+import {
+  Message,
+  ChatInput,
+  MessageType,
+} from './ChatComponents';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ChevronDown, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const PrivateChatPopup = ({ recipient, onClose, position }) => {
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState('');
   const [minimized, setMinimized] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const { client, connected } = useStompClient('http://localhost:8080/ws');
+  const { client, connected } = useStompClient();
   const { user } = useAuth();
-  const messagesEndRef = useRef(null);
-  const inputRef = useRef(null);
-  const [loading, setLoading] = useState(true);
+
+  // Initialize chat messages with pagination
+  const {
+    messages,
+    hasMore,
+    loadMore,
+    addMessage,
+    updateMessage
+  } = useChatMessages([], async (beforeId) => {
+    const response = await API.get(`/chat/messages/private/${recipient.id}`, {
+      params: { before: beforeId, limit: 20 }
+    });
+    return response.data;
+  });
 
   useEffect(() => {
     if (!client || !connected) return;
 
-    // Subscribe to private messages
     const subscription = client.subscribe(
       `/user/queue/private`,
       (message) => {
-        try {
-          const receivedMessage = JSON.parse(message.body);
-          if (receivedMessage.sender === recipient.username || 
-              receivedMessage.recipient === recipient.username) {
-            setMessages(prev => [...prev, receivedMessage]);
+        const receivedMessage = JSON.parse(message.body);
+        
+        // Only handle messages from this recipient
+        if (receivedMessage.sender === recipient.username ||
+            receivedMessage.recipient === recipient.username) {
+          addMessage(receivedMessage);
+          
+          // Increment unread count if minimized
+          if (minimized && receivedMessage.sender === recipient.username) {
+            setUnreadCount(prev => prev + 1);
             
-            // Increment unread count if minimized or window not focused
-            if ((minimized || !document.hasFocus()) && 
-                receivedMessage.sender === recipient.username) {
-              setUnreadCount(prev => prev + 1);
-              
-              // Show browser notification
-              if (Notification.permission === 'granted') {
-                new Notification(`Message from ${receivedMessage.sender}`, {
-                  body: receivedMessage.content
-                });
-              }
+            // Show browser notification
+            if (Notification.permission === 'granted' && document.hidden) {
+              new Notification(`Message from ${receivedMessage.sender}`, {
+                body: receivedMessage.content,
+                icon: recipient.profilePicture || '/default-avatar.png'
+              });
             }
           }
-        } catch (error) {
-          console.error('Error parsing message:', error);
         }
       }
     );
 
-    // Load existing messages
-    const loadMessages = async () => {
-      try {
-        const response = await API.get(
-          `/chat/private/${user.username}/${recipient.username}`
-        );
-        setMessages(response.data);
-      } catch (err) {
-        console.error('Error loading messages:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadMessages();
-
     return () => subscription.unsubscribe();
-  }, [client, connected, recipient.username, user.username, minimized]);
+  }, [client, connected, recipient.username, minimized]);
 
   // Request notification permission
   useEffect(() => {
@@ -75,93 +72,129 @@ const PrivateChatPopup = ({ recipient, onClose, position }) => {
     }
   }, []);
 
+  // Reset unread count when maximizing
   useEffect(() => {
     if (!minimized) {
       setUnreadCount(0);
-      markMessagesAsRead();
-      inputRef.current?.focus();
     }
   }, [minimized]);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  const markMessagesAsRead = async () => {
-    try {
-      await API.post(
-        `/chat/markAsRead/${recipient.username}`
-      );
-    } catch (err) {
-      console.error('Error marking messages as read:', err);
+  const handleSendMessage = (content) => {
+    if (!client || !connected) {
+      toast.error('Not connected to chat server');
+      return;
     }
-  };
-
-  const sendMessage = () => {
-    if (!input.trim() || !client || !connected) return;
 
     try {
       client.publish({
         destination: '/app/chat.private',
         body: JSON.stringify({
-          content: input,
-          recipient: recipient.username,
+          content,
+          recipient: recipient.id,
+          type: MessageType.TEXT,
           timestamp: new Date().toISOString()
         })
       });
-      setInput('');
     } catch (error) {
       console.error('Error sending message:', error);
       toast.error('Failed to send message');
     }
   };
 
+  const handleFileSelect = async (fileData) => {
+    if (!client || !connected) {
+      toast.error('Not connected to chat server');
+      return;
+    }
+
+    try {
+      client.publish({
+        destination: '/app/chat.private',
+        body: JSON.stringify({
+          content: fileData.fileUrl,
+          fileName: fileData.fileName,
+          recipient: recipient.username,
+          type: fileData.contentType.startsWith('image/')
+            ? MessageType.IMAGE
+            : MessageType.FILE,
+          timestamp: new Date().toISOString()
+        })
+      });
+    } catch (error) {
+      console.error('Error sending file:', error);
+      toast.error('Failed to send file');
+    }
+  };
+
+  const handleReaction = async (messageId, reactionType) => {
+    try {
+      const response = await API.post(`/chat/messages/${messageId}/reactions`, {
+        reactionType
+      });
+      updateMessage(messageId, response.data);
+    } catch (error) {
+      console.error('Error adding reaction:', error);
+      toast.error('Failed to add reaction');
+    }
+  };
+
   return (
     <div 
-      className={`fixed bottom-0 w-80 sm:w-96 bg-white dark:bg-gray-800 rounded-t-lg 
-        shadow-lg flex flex-col transition-all duration-200 ease-in-out
-        ${minimized ? 'h-12' : 'h-96'}`}
-      style={{ right: `${(position * 320) + 80}px` }}
+      className={`fixed bottom-0 z-50 transition-all duration-300 ease-in-out
+        ${minimized ? 'h-12' : 'h-96'}
+        ${position === 0 ? 'right-4' : `right-${80 + (position * 320)}px`}
+        w-80 sm:w-96 bg-white dark:bg-gray-800 rounded-t-lg shadow-lg flex flex-col`}
     >
+      {/* Chat Header */}
       <div 
-        className="flex items-center justify-between p-3 bg-blue-600 text-white 
-          rounded-t-lg cursor-pointer"
+        className="flex items-center justify-between p-3 bg-blue-600 text-white rounded-t-lg cursor-pointer"
         onClick={() => setMinimized(!minimized)}
       >
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-2">
           <div className="relative">
             <img
               src={recipient.profilePicture || "/default-avatar.png"}
               alt={recipient.username}
               className="w-8 h-8 rounded-full"
             />
-            <span className="absolute bottom-0 right-0 w-2 h-2 bg-green-500 
-              border-2 border-white rounded-full">
-            </span>
+            <div className="absolute bottom-0 right-0 w-2 h-2 bg-green-500 border-2 border-white rounded-full"></div>
           </div>
-          <div className="flex items-center">
-            <h3 className="font-medium">{recipient.username}</h3>
+          <div className="flex items-center gap-2">
+            <span className="font-medium">{recipient.username}</span>
             {unreadCount > 0 && (
-              <span className="ml-2 px-2 py-1 bg-red-500 text-white text-xs rounded-full">
+              <span className="px-2 py-1 text-xs bg-red-500 rounded-full">
                 {unreadCount}
               </span>
             )}
           </div>
         </div>
-        <div className="flex items-center space-x-2">
-          {minimized ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setMinimized(!minimized);
+            }}
+            className="p-1 hover:bg-white/10 rounded-full transition-colors"
+          >
+            <ChevronDown 
+              className={`w-4 h-4 transform transition-transform ${
+                minimized ? 'rotate-180' : ''
+              }`}
+            />
+          </button>
           <button
             onClick={(e) => {
               e.stopPropagation();
               onClose();
             }}
-            className="hover:text-gray-300 transition-colors"
+            className="p-1 hover:bg-white/10 rounded-full transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
       </div>
 
+      {/* Chat Content */}
       <AnimatePresence>
         {!minimized && (
           <motion.div
@@ -170,58 +203,17 @@ const PrivateChatPopup = ({ recipient, onClose, position }) => {
             exit={{ opacity: 0 }}
             className="flex-1 flex flex-col"
           >
-            {/* Messages Area */}
-            <div className="flex-1 p-4 overflow-y-auto">
-              {loading ? (
-                <div className="flex justify-center items-center h-full">
-                  <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-600"></div>
-                </div>
-              ) : (
-                messages.map((msg, idx) => (
-                  <div
-                    key={idx}
-                    className={`mb-4 flex ${msg.sender === user.username ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div
-                      className={`max-w-[70%] rounded-lg px-4 py-2 ${
-                        msg.sender === user.username
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
-                      }`}
-                    >
-                      <div>{msg.content}</div>
-                      <div className="text-xs opacity-75 mt-1">
-                        {new Date(msg.timestamp).toLocaleTimeString()}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-              <div ref={messagesEndRef} />
-            </div>
-
-            {/* Input Area */}
-            <div className="p-3 border-t dark:border-gray-700">
-              <div className="flex items-center space-x-2">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                  placeholder="Type a message..."
-                  className="flex-1 px-4 py-2 border rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 
-                    dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                />
-                <button
-                  onClick={sendMessage}
-                  disabled={!input.trim() || !connected}
-                  className="p-2 text-blue-600 hover:text-blue-700 disabled:text-gray-400 transition-colors"
-                >
-                  <Send className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
+            <MessageList
+              messages={messages}
+              currentUser={user}
+              onReact={handleReaction}
+              loadMore={loadMore}
+              hasMore={hasMore}
+            />
+            <ChatInput
+              onSend={handleSendMessage}
+              onFileSelect={handleFileSelect}
+            />
           </motion.div>
         )}
       </AnimatePresence>

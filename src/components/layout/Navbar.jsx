@@ -152,7 +152,7 @@ const Navbar = () => {
   const { user } = useAuth();
 
   return (
-    <header className="fixed w-full z-50 bg-white dark:bg-gray-800 shadow-lg">
+    <header className="fixed w-full z-[1000] bg-white dark:bg-gray-800 shadow-lg">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
         {/* Logo */}
         <Link to="/" className="text-2xl font-extrabold text-blue-600 dark:text-blue-400">

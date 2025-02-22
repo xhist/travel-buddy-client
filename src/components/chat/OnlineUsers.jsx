@@ -21,7 +21,6 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
   const { user: currentUser } = useAuth();
   const { client, connected } = useStompClient();
 
-  // Effect for WebSocket subscription
   useEffect(() => {
     if (!client || !connected) return;
 
@@ -33,7 +32,6 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
       }
     });
 
-    // Request initial online users list
     client.publish({
       destination: '/app/presence.getOnlineUsers'
     });
@@ -41,7 +39,6 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
     return () => subscription.unsubscribe();
   }, [client, connected, currentUser?.id]);
 
-  // Effect for filtering users based on search
   useEffect(() => {
     setFilteredUsers(
       users.filter(user => 
@@ -50,7 +47,6 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
     );
   }, [users, searchQuery]);
 
-  // Effect for loading friend statuses
   useEffect(() => {
     const loadFriendStatuses = async () => {
       const statuses = {};
@@ -202,28 +198,28 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
           {/* Mobile backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
+            animate={{ opacity: 1, }}
             exit={{ opacity: 0 }}
-            className="lg:hidden fixed inset-0 bg-black/50 z-40"
+            className="lg:hidden fixed inset-0 bg-black/50"
+            style={{ zIndex: 1001 }}
             onClick={onClose}
           />
 
-          {/* Sidebar */}
+          {/* Sidebar Container */}
           <motion.div
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 20, z: 1000 }}
+            transition={{ type: 'spring', damping: 20 }}
             className={`fixed lg:relative inset-y-0 right-0 w-80 bg-gray-50 dark:bg-gray-800 shadow-lg 
-              flex flex-col ${className} 
-              lg:h-[calc(100vh-4rem)] lg:mt-[-1rem]`}
-            style={{ zIndex: 10 }}
+              flex flex-col ${className}`}
+            style={{ zIndex: 999, top: window.innerWidth >= 1024 ? undefined : 0 }}
           >
             {/* Header */}
             <motion.div 
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="top-0 z-10 bg-gray-50 dark:bg-gray-800 p-4 border-b dark:border-gray-700"
+              className="top-0 bg-gray-50 dark:bg-gray-800 p-4 border-b dark:border-gray-700"
             >
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-bold text-gray-800 dark:text-gray-200">
@@ -237,7 +233,6 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
                 </button>
               </div>
 
-              {/* Search */}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
@@ -253,7 +248,7 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
             </motion.div>
 
             {/* User List */}
-            <motion.div className="flex-1 overflow-y-auto px-4 py-2">
+            <motion.div className="flex-1 overflow-y-auto p-4">
               <div className="space-y-3">
                 <AnimatePresence mode="popLayout">
                   {filteredUsers.length > 0 ? (

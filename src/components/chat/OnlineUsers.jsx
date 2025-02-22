@@ -210,7 +210,7 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 20 }}
+            transition={{ type: 'spring', damping: 20, zIndex: 999 }}
             className={`fixed lg:relative inset-y-0 right-0 w-80 bg-gray-50 dark:bg-gray-800 shadow-lg 
               flex flex-col ${className}`}
             style={{ zIndex: 999, top: window.innerWidth >= 1024 ? undefined : 0 }}

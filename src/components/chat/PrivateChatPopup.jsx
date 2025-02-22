@@ -4,11 +4,8 @@ import { useAuth } from '../../hooks/useAuth';
 import API from '../../api/api';
 import { useChatMessages } from '../../hooks/useChatMessages';
 import { MessageList } from './layouts/MessageList';
-import {
-  Message,
-  ChatInput,
-  MessageType,
-} from './ChatComponents';
+import Message from './layouts/Message';
+import ChatInput from './layouts/ChatInput';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, X } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -91,7 +88,7 @@ const PrivateChatPopup = ({ recipient, onClose, position }) => {
         body: JSON.stringify({
           content,
           recipient: recipient.id,
-          type: MessageType.TEXT,
+          type: 'TEXT',
           timestamp: new Date().toISOString()
         })
       });
@@ -115,8 +112,8 @@ const PrivateChatPopup = ({ recipient, onClose, position }) => {
           fileName: fileData.fileName,
           recipient: recipient.username,
           type: fileData.contentType.startsWith('image/')
-            ? MessageType.IMAGE
-            : MessageType.FILE,
+            ? 'IMAGE'
+            : 'FILE',
           timestamp: new Date().toISOString()
         })
       });

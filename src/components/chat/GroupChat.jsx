@@ -71,17 +71,54 @@ const GroupChat = ({ tripId }) => {
     return () => observer.disconnect();
   }, [hasMore, loadingMore, oldestMessageId, client, connected]);
 
-  const getGroupKeyFromTimestamp = (timestamp) => {
-    try {
-      if (typeof timestamp === 'string') {
-        // e.g. "2025-02-22 23:19:40.478380" => get date portion
-        return timestamp.split(' ')[0];
-      }
-      return new Date(timestamp).toISOString().split('T')[0];
-    } catch (e) {
-      console.error('Error getting group key:', e);
-      return new Date().toISOString().split('T')[0];
+  // A robust parser that handles string timestamps like "2025-02-23 11:56:29.963144"
+  // and array timestamps like [2025, 2, 22, 16, 33, 36, 916190000]
+  const parseTimestamp = (timestamp) => {
+    // Fallback: if no timestamp, use current date.
+    if (!timestamp) {
+      console.error("Missing timestamp; using fallback date.");
+      return new Date();
     }
+
+    // If the timestamp is already an array, convert it:
+    if (Array.isArray(timestamp)) {
+      // Expecting format: [year, month, day, hour, minute, second, nanosecond]
+      const [year, month, day, hour, minute, second, nanosecond] = timestamp;
+      // JavaScript Date months are zero-indexed, and we need to convert nanoseconds to milliseconds.
+      const ms = Math.floor(nanosecond / 1e6);
+      return new Date(year, month - 1, day, hour, minute, second, ms);
+    }
+
+    // If timestamp is a string, assume the format "YYYY-MM-DD HH:MM:SS.microseconds"
+    if (typeof timestamp === 'string') {
+      // Remove the microseconds part and replace the space with 'T'
+      const cleaned = timestamp.split('.')[0].replace(' ', 'T');
+      const date = new Date(cleaned);
+      if (!isNaN(date.getTime())) {
+        return date;
+      } else {
+        console.error("Failed to parse string timestamp:", timestamp, "; using fallback date.");
+        return new Date();
+      }
+    }
+
+    // If timestamp is already a Date, return it.
+    if (timestamp instanceof Date) {
+      return timestamp;
+    }
+
+    // As a last resort, try to create a Date from timestamp.
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) {
+      console.error("Failed to parse timestamp:", timestamp, "; using fallback date.");
+      return new Date();
+    }
+    return date;
+  };
+
+  const getGroupKeyFromTimestamp = (timestamp) => {
+    const date = parseTimestamp(timestamp);
+    return date.toISOString().split('T')[0];
   };
 
   const compareTimestamps = (a, b) => {

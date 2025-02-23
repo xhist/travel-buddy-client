@@ -2,38 +2,45 @@ import React, { useState } from 'react';
 import { FileText, Download } from 'lucide-react';
 import MessageReactions from './MessageReactions';
 
-// More robust timestamp parser
 const parseTimestamp = (timestamp) => {
+  // 1) If falsy, return null
   if (!timestamp) return null;
 
-  let date;
-
-  // 1) Try standard JS Date parsing
+  // 2) Try the "standard" parse with `new Date(...)`
   try {
-    date = new Date(timestamp);
+    const date = new Date(timestamp);
     if (!isNaN(date.getTime())) {
+      // If that worked, return
       return date;
     }
-  } catch (e) {
-    console.error('Error parsing timestamp with new Date:', e);
+  } catch (err) {
+    // If that fails, we ignore and move on
   }
 
-  // 2) Attempt to handle PostgreSQL-like format "YYYY-MM-DD HH:mm:ss.mmmmmm"
-  try {
-    if (timestamp.includes('.')) {
-      // Remove microseconds part
-      timestamp = timestamp.split('.')[0];
+  // 3) If we get here, either the above parse failed
+  //    or the value wasn't something `new Date(...)` recognized.
+  //    We'll now attempt the PostgreSQL-like format parse,
+  //    but ONLY if it's a string.
+  if (typeof timestamp === 'string') {
+    try {
+      // Example: "2025-02-22 23:19:40.478380"
+      // Remove microseconds if present
+      if (timestamp.includes('.')) {
+        timestamp = timestamp.split('.')[0]; 
+      }
+      // Replace space with 'T' for ISO8601
+      timestamp = timestamp.replace(' ', 'T');
+
+      const date = new Date(timestamp);
+      if (!isNaN(date.getTime())) {
+        return date;
+      }
+    } catch (err) {
+      // Parsing failed again; ignore
     }
-    timestamp = timestamp.replace(' ', 'T');
-    date = new Date(timestamp);
-    if (!isNaN(date.getTime())) {
-      return date;
-    }
-  } catch (e) {
-    console.error('Error parsing custom timestamp format:', e);
   }
 
-  // If all fails, return null
+  // 4) If everything fails, return null
   return null;
 };
 

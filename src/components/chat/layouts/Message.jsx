@@ -2,33 +2,47 @@ import React, { useState } from 'react';
 import { FileText, Download } from 'lucide-react';
 import MessageReactions from './MessageReactions';
 
+// More robust timestamp parser
 const parseTimestamp = (timestamp) => {
+  if (!timestamp) return null;
+
+  let date;
+
+  // 1) Try standard JS Date parsing
   try {
-    // For PostgreSQL timestamp format: "2025-02-22 23:19:40.478380"
-    if (typeof timestamp === 'string' && timestamp.includes(' ')) {
-      return new Date(timestamp.replace(' ', 'T'));
+    date = new Date(timestamp);
+    if (!isNaN(date.getTime())) {
+      return date;
     }
-    return new Date(timestamp);
   } catch (e) {
-    console.error('Error parsing timestamp:', e);
-    return new Date();
+    console.error('Error parsing timestamp with new Date:', e);
   }
+
+  // 2) Attempt to handle PostgreSQL-like format "YYYY-MM-DD HH:mm:ss.mmmmmm"
+  try {
+    if (timestamp.includes('.')) {
+      // Remove microseconds part
+      timestamp = timestamp.split('.')[0];
+    }
+    timestamp = timestamp.replace(' ', 'T');
+    date = new Date(timestamp);
+    if (!isNaN(date.getTime())) {
+      return date;
+    }
+  } catch (e) {
+    console.error('Error parsing custom timestamp format:', e);
+  }
+
+  // If all fails, return null
+  return null;
 };
 
 const formatTime = (timestamp) => {
+  const date = parseTimestamp(timestamp);
+  if (!date || isNaN(date.getTime())) return '';
   try {
-    if (!timestamp) return '';
-
-    // For PostgreSQL timestamp format: "2025-02-22 23:19:40.478380"
-    if (typeof timestamp === 'string') {
-      // Split at decimal point and space to get just the time part
-      const timePart = timestamp.split(' ')[1].split('.')[0];
-      // Extract hours and minutes
-      return timePart.substring(0, 5);
-    }
-
-    return new Date(timestamp).toLocaleTimeString([], { 
-      hour: '2-digit',
+    return date.toLocaleTimeString([], { 
+      hour: '2-digit', 
       minute: '2-digit',
       hour12: false 
     });
@@ -39,24 +53,10 @@ const formatTime = (timestamp) => {
 };
 
 const formatDate = (timestamp) => {
+  const date = parseTimestamp(timestamp);
+  if (!date || isNaN(date.getTime())) return '';
   try {
-    if (!timestamp) return '';
-
-    // For PostgreSQL timestamp format: "2025-02-22 23:19:40.478380"
-    if (typeof timestamp === 'string') {
-      const datePart = timestamp.split(' ')[0];
-      const date = new Date(datePart);
-      if (!isNaN(date.getTime())) {
-        return date.toLocaleDateString([], { 
-          weekday: 'long',
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric'
-        });
-      }
-    }
-
-    return new Date(timestamp).toLocaleDateString([], { 
+    return date.toLocaleDateString([], { 
       weekday: 'long',
       year: 'numeric',
       month: 'long',
@@ -68,34 +68,23 @@ const formatDate = (timestamp) => {
   }
 };
 
-const MessageGroup = ({ timestamp, lastMessageUser }) => (
+const MessageGroup = ({ timestamp }) => (
   <div className="flex items-center justify-center my-6 relative">
     <div className="absolute w-full border-t border-gray-200 dark:border-gray-700"></div>
     <div className="relative px-6 bg-gray-50 dark:bg-gray-900">
-      <div className="flex items-center gap-3 px-4 py-2 bg-white dark:bg-gray-800 rounded-full 
+      <div className="px-4 py-2 bg-white dark:bg-gray-800 rounded-full 
         shadow-sm border border-gray-200 dark:border-gray-700">
         <span className="text-sm text-gray-600 dark:text-gray-300">
           {formatDate(timestamp)}
         </span>
-        {lastMessageUser && (
-          <>
-            <div className="w-px h-4 bg-gray-300 dark:bg-gray-600"></div>
-            <div className="relative">
-              <img
-                src={lastMessageUser.profilePicture || '/default-avatar.png'}
-                alt={lastMessageUser.username}
-                className="w-6 h-6 rounded-full"
-              />
-            </div>
-          </>
-        )}
       </div>
     </div>
   </div>
 );
 
 const Message = ({ message, currentUser, onReact, onVote, isLastInGroup }) => {
-  const [selectedOption, setSelectedOption] = useState(null);
+  const [showAvatarTooltip, setShowAvatarTooltip] = useState(false);
+  const [showReactions, setShowReactions] = useState(false);
   const isOwnMessage = message.sender === currentUser?.username;
 
   const handleProfileClick = () => {
@@ -107,34 +96,41 @@ const Message = ({ message, currentUser, onReact, onVote, isLastInGroup }) => {
     const totalVotes = message.poll.options.reduce((sum, opt) => sum + (opt.votes?.length || 0), 0);
 
     return (
-      <div className="mt-2 space-y-2">
+      <div className="mt-2 space-y-2 min-w-[200px]">
         <h4 className="font-medium mb-3">{message.poll.question}</h4>
         {message.poll.options.map((option) => {
-          const percentage = totalVotes > 0 ? (option.votes?.length || 0) / totalVotes * 100 : 0;
+          const votesCount = option.votes?.length || 0;
           const hasVoted = option.votes?.some(vote => vote.userId === currentUser?.id);
-          
+          const percentage = totalVotes > 0 ? (votesCount / totalVotes) * 100 : 0;
+
           return (
             <div key={option.id} className="relative mb-2">
               <button 
                 onClick={() => onVote(message.poll.id, option.id)}
-                className="w-full text-left relative overflow-hidden"
+                className="w-full text-left"
               >
-                <div className={`p-2 rounded-lg relative z-10 ${
-                  hasVoted ? 'bg-blue-100 dark:bg-blue-900/30' : 'bg-gray-100 dark:bg-gray-700'
-                }`}>
-                  <div className="absolute left-0 top-0 h-full bg-blue-200 dark:bg-blue-800/50 
-                    transition-all duration-300" 
+                <div 
+                  className={`
+                    p-2 rounded-lg relative overflow-hidden
+                    ${hasVoted ? 'bg-blue-100 dark:bg-blue-900/30' : 'bg-gray-100 dark:bg-gray-700'}
+                  `}
+                >
+                  {/* Fill bar */}
+                  <div 
+                    className="absolute left-0 top-0 h-full bg-blue-200 dark:bg-blue-800/50 
+                      transition-all duration-300" 
                     style={{ width: `${percentage}%` }} 
                   />
                   <div className="relative z-10 flex justify-between items-center">
                     <span>{option.text}</span>
                     <span className="text-sm ml-2">
-                      {option.votes?.length || 0} ({percentage.toFixed(1)}%)
+                      {votesCount} ({percentage.toFixed(1)}%)
                     </span>
                   </div>
                 </div>
               </button>
-              
+
+              {/* Show voters */}
               {option.votes?.length > 0 && (
                 <div className="mt-1 ml-2 text-sm text-gray-500 dark:text-gray-400 flex flex-wrap gap-1">
                   {option.votes.map((vote, idx) => (
@@ -156,70 +152,86 @@ const Message = ({ message, currentUser, onReact, onVote, isLastInGroup }) => {
   };
 
   return (
-    <div className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'} mb-4 relative group min-h-[40px]`}>
-      <div className="flex items-end gap-2 max-w-[85%] sm:max-w-[75%]">
-        {!isOwnMessage && (
-          <>
-            {!isLastInGroup && (
+    <div className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'} mb-4 relative min-h-[40px]`}>
+      <div className={`flex items-end gap-2 max-w-[85%] sm:max-w-[75%] ${
+        isOwnMessage ? 'flex-row-reverse' : 'flex-row'
+      }`}>
+        {/* Avatar side */}
+        <div className="w-8 relative">
+          {isLastInGroup && (
+            <div className="relative">
               <img
                 src={message.senderProfilePic || '/default-avatar.png'}
                 alt={message.sender}
                 className="w-8 h-8 rounded-full cursor-pointer hover:opacity-80 transition-opacity"
                 onClick={handleProfileClick}
+                onMouseEnter={() => setShowAvatarTooltip(true)}
+                onMouseLeave={() => setShowAvatarTooltip(false)}
               />
-            )}
-            {isLastInGroup && (
-              <div className="w-8" />
-            )}
-          </>
-        )}
-        
-        <div className={`flex flex-col ${isOwnMessage ? 'items-end' : 'items-start'}`}>
-          {!isOwnMessage && (
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-2 mb-1">
-              {message.sender}
-            </span>
+              {showAvatarTooltip && (
+                <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 px-2 py-1 
+                  bg-gray-900 text-white text-xs rounded shadow-lg z-50 whitespace-nowrap">
+                  {message.sender}
+                </div>
+              )}
+            </div>
           )}
-          
+        </div>
+
+        {/* Bubble + Reactions */}
+        <div className={`flex flex-col ${isOwnMessage ? 'items-end' : 'items-start'}`}>
+          {/* Wrap bubble + reaction area together so hover won't break */}
           <div
-            className={`relative group max-w-full ${
-              isOwnMessage
-                ? 'bg-blue-600 text-white rounded-l-lg rounded-tr-lg'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-r-lg rounded-tl-lg'
-            } p-3 shadow-sm hover:shadow-md transition-shadow`}
+            className="relative"
+            onMouseEnter={() => setShowReactions(true)}
+            onMouseLeave={() => setShowReactions(false)}
           >
-            {message.type === 'IMAGE' ? (
-              <img
-                src={message.content}
-                alt="Shared"
-                className="max-w-full h-auto rounded-lg object-contain"
-              />
-            ) : message.type === 'FILE' ? (
-              <a
-                href={message.content}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-600 rounded hover:bg-gray-100 
-                  dark:hover:bg-gray-500 transition-colors group"
-              >
-                <FileText className="w-5 h-5" />
-                <span>{message.fileName}</span>
-                <Download className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </a>
-            ) : message.type === 'POLL' ? (
-              renderPoll()
-            ) : (
-              <p className="whitespace-pre-wrap break-words">{message.content}</p>
-            )}
-            
-            <div className="text-xs mt-1 opacity-75">
-              {formatTime(message.timestamp)}
+            <div
+              className={`max-w-full ${
+                isOwnMessage
+                  ? 'bg-blue-600 text-white rounded-l-lg rounded-tr-lg'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-r-lg rounded-tl-lg'
+              } p-3 shadow-sm hover:shadow-md transition-shadow`}
+            >
+              {/* Content */}
+              {message.type === 'IMAGE' ? (
+                <img
+                  src={message.content}
+                  alt="Shared"
+                  className="max-w-full h-auto rounded-lg object-contain"
+                />
+              ) : message.type === 'FILE' ? (
+                <a
+                  href={message.content}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-600 rounded hover:bg-gray-100 
+                    dark:hover:bg-gray-500 transition-colors group"
+                >
+                  <FileText className="w-5 h-5" />
+                  <span>{message.fileName}</span>
+                  <Download className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </a>
+              ) : message.type === 'POLL' ? (
+                renderPoll()
+              ) : (
+                <p className={`whitespace-pre-wrap break-words ${isOwnMessage ? 'text-right' : 'text-left'}`}>
+                  {message.content}
+                </p>
+              )}
+
+              {/* Timestamp */}
+              <div className={`text-xs mt-1 opacity-75 ${isOwnMessage ? 'text-right' : 'text-left'}`}>
+                {formatTime(message.timestamp)}
+              </div>
             </div>
 
+            {/* Reaction overlay */}
             <MessageReactions
               message={message}
               onReact={onReact}
               isOwnMessage={isOwnMessage}
+              showReactions={showReactions}
             />
           </div>
         </div>

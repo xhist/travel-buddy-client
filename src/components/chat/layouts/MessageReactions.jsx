@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
@@ -12,11 +12,10 @@ const REACTIONS = {
   ANGRY: '😠'
 };
 
-const MessageReactions = ({ message, onReact, isOwnMessage }) => {
-  const [showReactions, setShowReactions] = useState(false);
+const MessageReactions = ({ message, onReact, isOwnMessage, showReactions }) => {
   const [selectedReaction, setSelectedReaction] = useState(null);
+  const [showReactionList, setShowReactionList] = useState(false);
   const menuRef = useRef(null);
-  const triggerRef = useRef(null);
 
   const handleReactionClick = (reactionType) => {
     onReact(message.id, reactionType);
@@ -24,36 +23,30 @@ const MessageReactions = ({ message, onReact, isOwnMessage }) => {
 
   const getReactionCounts = () => {
     if (!message.reactions?.length) return {};
-    
     return message.reactions.reduce((acc, reaction) => {
       if (!reaction?.type) return acc;
-      
       const type = reaction.type;
       if (!acc[type]) {
-        acc[type] = {
-          count: 0,
-          users: []
-        };
+        acc[type] = { count: 0, users: [] };
       }
-      
       acc[type].count += 1;
       if (reaction.user) {
         acc[type].users.push(reaction.user);
       }
-      
       return acc;
     }, {});
   };
 
   const reactionCounts = getReactionCounts();
 
+  // Displays a Dialog listing all users who reacted with a certain type
   const ReactionUsersList = ({ reactionType, reactionData }) => {
     if (!reactionData?.users?.length) return null;
 
     return (
       <Dialog.Root 
         open={selectedReaction === reactionType} 
-        onOpenChange={() => setSelectedReaction(null)}
+        onOpenChange={(open) => setSelectedReaction(open ? reactionType : null)}
       >
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
@@ -96,14 +89,7 @@ const MessageReactions = ({ message, onReact, isOwnMessage }) => {
 
   return (
     <>
-      {/* Hidden hover trigger area */}
-      <div
-        ref={triggerRef}
-        className="absolute inset-0 z-10"
-        onMouseEnter={() => setShowReactions(true)}
-      />
-
-      {/* Reaction Menu */}
+      {/* Reaction Picker (shows on hover under the message) */}
       <AnimatePresence>
         {showReactions && (
           <motion.div
@@ -111,11 +97,9 @@ const MessageReactions = ({ message, onReact, isOwnMessage }) => {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
-            className={`absolute -bottom-12 ${isOwnMessage ? 'right-0' : 'left-0'} 
+            className={`absolute ${isOwnMessage ? 'right-0' : 'left-0'} top-full mt-2
               bg-white dark:bg-gray-800 rounded-full shadow-lg p-1 flex items-center gap-1 z-20 
               border dark:border-gray-700`}
-            onMouseEnter={() => setShowReactions(true)}
-            onMouseLeave={() => setShowReactions(false)}
           >
             {Object.entries(REACTIONS).map(([type, emoji]) => (
               <motion.button
@@ -132,32 +116,41 @@ const MessageReactions = ({ message, onReact, isOwnMessage }) => {
         )}
       </AnimatePresence>
 
-      {/* Display Existing Reactions */}
+      {/* Existing reactions (always visible if any exist) */}
       {Object.entries(reactionCounts).length > 0 && (
         <motion.div 
           initial={{ opacity: 0, scale: 0.5 }}
           animate={{ opacity: 1, scale: 1 }}
-          className={`absolute -bottom-6 ${isOwnMessage ? 'right-2' : 'left-2'} 
+          className={`absolute ${isOwnMessage ? 'right-0' : 'left-0'} top-full mt-[52px]
             bg-white dark:bg-gray-800 rounded-full shadow-md px-2 py-1 
-            flex items-center gap-1 z-5 text-sm border dark:border-gray-700`}
+            flex items-center gap-1 z-10 text-sm border dark:border-gray-700`}
         >
           {Object.entries(reactionCounts).map(([type, data]) => (
             <button
               key={type}
               onClick={() => setSelectedReaction(type)}
               className="flex items-center gap-1 hover:bg-gray-100 dark:hover:bg-gray-700 
-                rounded-full px-1 transition-colors"
+                rounded-full px-1 transition-colors group relative"
+              onMouseEnter={() => setShowReactionList(true)}
+              onMouseLeave={() => setShowReactionList(false)}
             >
               <span>{REACTIONS[type]}</span>
               <span className="text-xs text-gray-600 dark:text-gray-300">
                 {data.count}
               </span>
+              {/* Tooltip listing user names (on hover) */}
+              {showReactionList && (
+                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-2 py-1 
+                  bg-gray-900 text-white text-xs rounded shadow-lg whitespace-nowrap z-50">
+                  {data.users.map(u => u.username).join(', ')}
+                </div>
+              )}
             </button>
           ))}
         </motion.div>
       )}
 
-      {/* Reaction Users Modals */}
+      {/* Dialog for each reaction type */}
       {Object.entries(reactionCounts).map(([type, data]) => (
         <ReactionUsersList key={type} reactionType={type} reactionData={data} />
       ))}

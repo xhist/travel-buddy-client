@@ -33,6 +33,7 @@ const GroupChat = ({ tripId }) => {
         try {
           const receivedMessage = JSON.parse(message.body);
           setMessages(prev => {
+            // Avoid duplicates if the same message ID arrives again
             if (prev.some(msg => msg.id === receivedMessage.id)) {
               return prev;
             }
@@ -50,12 +51,13 @@ const GroupChat = ({ tripId }) => {
 
   useEffect(() => {
     loadInitialMessages();
-  }, [tripId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tripId, client, connected]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
       async (entries) => {
-        if (entries[0].isIntersecting && hasMore && !loadingMore) {
+        if (entries[0].isIntersecting && hasMore && !loadingMore && client && connected) {
           await loadMoreMessages();
         }
       },
@@ -67,50 +69,15 @@ const GroupChat = ({ tripId }) => {
     }
 
     return () => observer.disconnect();
-  }, [hasMore, loadingMore, oldestMessageId]);
-
-  const parseTimestamp = (timestamp) => {
-    try {
-      if (!timestamp) return null;
-
-      // If it's already a Date object
-      if (timestamp instanceof Date) {
-        return timestamp;
-      }
-
-      // If it's a PostgreSQL timestamp format (2025-02-22 23:19:40.478380)
-      if (typeof timestamp === 'string' && timestamp.includes('.')) {
-        const parts = timestamp.split('.');
-        return new Date(parts[0].replace(' ', 'T') + 'Z');
-      }
-
-      // Try to parse as regular date string
-      const date = new Date(timestamp);
-      if (!isNaN(date.getTime())) {
-        return date;
-      }
-
-      return null;
-    } catch (e) {
-      console.error('Error parsing timestamp:', timestamp, e);
-      return null;
-    }
-  };
-
-  const getDateKey = (timestamp) => {
-    const date = parseTimestamp(timestamp);
-    if (!date) return 'unknown';
-    return date.toISOString().split('T')[0];
-  };
+  }, [hasMore, loadingMore, oldestMessageId, client, connected]);
 
   const getGroupKeyFromTimestamp = (timestamp) => {
     try {
-      // Format: "2025-02-22 23:19:40.478380"
       if (typeof timestamp === 'string') {
-        // Extract just the date part: "2025-02-22"
+        // e.g. "2025-02-22 23:19:40.478380" => get date portion
         return timestamp.split(' ')[0];
       }
-      return new Date().toISOString().split('T')[0];
+      return new Date(timestamp).toISOString().split('T')[0];
     } catch (e) {
       console.error('Error getting group key:', e);
       return new Date().toISOString().split('T')[0];
@@ -119,22 +86,18 @@ const GroupChat = ({ tripId }) => {
 
   const compareTimestamps = (a, b) => {
     try {
-      // Extract datetime without milliseconds
-      const getTime = (timestamp) => {
-        if (typeof timestamp === 'string') {
-          // Split at the decimal point if exists
-          return timestamp.split('.')[0];
+      const getTime = (ts) => {
+        if (typeof ts === 'string') {
+          return ts.split('.')[0]; // remove microseconds if any
         }
-        return timestamp;
+        return ts;
       };
-
       const timeA = new Date(getTime(a.timestamp));
       const timeB = new Date(getTime(b.timestamp));
-      
       if (isNaN(timeA.getTime()) || isNaN(timeB.getTime())) {
         return 0;
       }
-      
+      // Sort descending by timestamp (newest first)
       return timeB.getTime() - timeA.getTime();
     } catch (e) {
       console.error('Error comparing timestamps:', e);
@@ -144,32 +107,42 @@ const GroupChat = ({ tripId }) => {
 
   const groupMessagesByDate = (messages) => {
     if (!Array.isArray(messages) || messages.length === 0) return [];
-    
+
     const groups = {};
-    
-    // Sort messages by timestamp in descending order
     const sortedMessages = [...messages].sort(compareTimestamps);
 
-    // Group messages by date
-    sortedMessages.forEach(message => {
-      try {
-        if (!message?.timestamp) return;
+    let currentGroup = null;
+    let currentSender = null;
 
-        const dateKey = getGroupKeyFromTimestamp(message.timestamp);
-        
-        if (!groups[dateKey]) {
-          groups[dateKey] = {
-            timestamp: message.timestamp,
-            messages: [],
-            lastMessageUser: message.sender ? {
-              username: message.sender,
-              profilePicture: message.senderProfilePic || '/default-avatar.png'
-            } : null
-          };
-        }
-        groups[dateKey].messages.push(message);
-      } catch (e) {
-        console.error('Error grouping message:', message, e);
+    sortedMessages.forEach((msg, index) => {
+      if (!msg?.timestamp) return;
+      const dateKey = getGroupKeyFromTimestamp(msg.timestamp);
+
+      if (!groups[dateKey]) {
+        groups[dateKey] = {
+          timestamp: msg.timestamp,
+          messages: [],
+          lastMessageUser: null
+        };
+      }
+
+      const isNewSender = currentSender !== msg.sender;
+      const isNewGroup = currentGroup !== dateKey;
+
+      if (isNewSender || isNewGroup) {
+        currentSender = msg.sender;
+        msg.isFirstInSequence = true;
+      }
+
+      currentGroup = dateKey;
+      groups[dateKey].messages.push(msg);
+
+      // Update last message user for the group
+      if (msg.sender && (!groups[dateKey].lastMessageUser || index === messages.length - 1)) {
+        groups[dateKey].lastMessageUser = {
+          username: msg.sender,
+          profilePicture: msg.senderProfilePic || '/default-avatar.png'
+        };
       }
     });
 
@@ -177,16 +150,13 @@ const GroupChat = ({ tripId }) => {
   };
 
   const loadInitialMessages = async () => {
+    if (!client || !connected) return;
     try {
       setLoading(true);
-      const response = await API.get(`/chat/messages/trip/${tripId}`, {
-        params: { limit: 20 }
-      });
-      
+      const response = await API.get(`/chat/messages/trip/${tripId}`, { params: { limit: 20 } });
       if (response.data.length < 20) {
         setHasMore(false);
       }
-      
       if (response.data.length > 0) {
         setMessages(response.data);
         setOldestMessageId(response.data[response.data.length - 1].id);
@@ -201,8 +171,7 @@ const GroupChat = ({ tripId }) => {
   };
 
   const loadMoreMessages = async () => {
-    if (!hasMore || !oldestMessageId) return;
-
+    if (!hasMore || !oldestMessageId || !client || !connected) return;
     try {
       setLoadingMore(true);
       const response = await API.get(`/chat/messages/trip/${tripId}`, {
@@ -211,7 +180,6 @@ const GroupChat = ({ tripId }) => {
           limit: 20
         }
       });
-
       if (response.data.length === 0) {
         setHasMore(false);
       } else {
@@ -231,7 +199,6 @@ const GroupChat = ({ tripId }) => {
       toast.error('Not connected to chat server');
       return;
     }
-
     try {
       client.publish({
         destination: `/app/chat.trip.${tripId}`,
@@ -282,7 +249,6 @@ const GroupChat = ({ tripId }) => {
         question: pollData.question,
         options: pollData.options.map(opt => opt.text)
       });
-      
       if (response && response.data) {
         client.publish({
           destination: `/app/chat.trip.${tripId}`,
@@ -292,13 +258,12 @@ const GroupChat = ({ tripId }) => {
             timestamp: new Date().toISOString()
           })
         });
-  
         toast.success('Poll created successfully');
       }
     } catch (error) {
       console.error('Error creating poll:', error);
       toast.error('Failed to create poll');
-      throw error;
+      throw error; 
     }
   };
 
@@ -307,7 +272,7 @@ const GroupChat = ({ tripId }) => {
       const response = await API.post(`/trips/${tripId}/polls/${pollId}/vote`, {
         optionId
       });
-
+      // Update the local messages array so the UI shows the new poll data
       setMessages(prev => 
         prev.map(msg => 
           msg.type === 'POLL' && msg.poll?.id === pollId
@@ -326,7 +291,7 @@ const GroupChat = ({ tripId }) => {
       const response = await API.post(`/chat/messages/${messageId}/reactions`, {
         reactionType
       });
-      
+      // Replace the message's reactions with updated data from server
       setMessages(prev =>
         prev.map(msg =>
           msg.id === messageId ? { ...msg, reactions: response.data.reactions } : msg
@@ -356,8 +321,8 @@ const GroupChat = ({ tripId }) => {
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col h-full">
         {/* Header */}
-        <div className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 p-4 
-          flex items-center justify-between">
+        <div className="sticky top-0 bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 
+          p-4 flex items-center justify-between z-10">
           <h2 className="text-xl font-semibold flex items-center gap-2">
             <Users className="w-5 h-5" />
             Group Chat
@@ -383,7 +348,10 @@ const GroupChat = ({ tripId }) => {
             <div className="flex flex-col-reverse">
               {messageGroups.map((group, groupIndex) => (
                 <div key={`${group.timestamp}-${groupIndex}`}>
-                  <MessageGroup timestamp={group.timestamp} />
+                  <MessageGroup 
+                    timestamp={group.timestamp}
+                    lastMessageUser={group.lastMessageUser}
+                  />
                   {group.messages.map((message, messageIndex) => (
                     <Message
                       key={message.id}
@@ -391,7 +359,7 @@ const GroupChat = ({ tripId }) => {
                       currentUser={user}
                       onReact={handleReaction}
                       onVote={handleVote}
-                      isLastInGroup={messageIndex === 0}
+                      isLastInGroup={messageIndex === group.messages.length - 1}
                     />
                   ))}
                 </div>
@@ -401,14 +369,13 @@ const GroupChat = ({ tripId }) => {
           </div>
 
           {/* Desktop Sidebar */}
-          <div className="hidden lg:block w-80 border-l dark:border-gray-700">
-            <div className="h-full overflow-y-auto">
-              <OnlineUsers
-                isOpen={true}
-                onClose={() => {}}
-                onUserChat={() => {}}
-              />
-            </div>
+          <div className="hidden lg:block w-80 border-l dark:border-gray-700 bg-white dark:bg-gray-800">
+            <OnlineUsers
+              isOpen={true}
+              onClose={() => {}}
+              onUserChat={() => {}}
+              className="h-full"
+            />
           </div>
         </div>
 
@@ -421,15 +388,12 @@ const GroupChat = ({ tripId }) => {
       </div>
 
       {/* Mobile Sidebar */}
-      {showSidebar && (
-        <div className="lg:hidden fixed inset-0 z-50">
-          <OnlineUsers
-            isOpen={true}
-            onClose={() => setShowSidebar(false)}
-            onUserChat={() => {}}
-          />
-        </div>
-      )}
+      <OnlineUsers
+        isOpen={showSidebar}
+        onClose={() => setShowSidebar(false)}
+        onUserChat={() => {}}
+        className="lg:hidden"
+      />
     </div>
   );
 };

@@ -211,15 +211,15 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
 
           {/* Sidebar Container */}
           <motion.div
-            initial={{ x: '100%', zIndex: 100 }}
-            animate={{ x: 0, zIndex: 1001 }}
-            exit={{ x: '100%', zIndex: 100 }}
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className={`fixed lg:relative right-0 top-0 h-full w-80 bg-white dark:bg-gray-800 
-              shadow-xl flex flex-col z-[100] ${className}`}
+            className={`fixed lg:static right-0 top-0 lg:top-auto h-full lg:h-auto w-80 bg-white dark:bg-gray-800 
+              shadow-xl flex flex-col z-[1001] ${className}`}
           >
             {/* Header */}
-            <div className="top-0 bg-white dark:bg-gray-800 p-4 border-b dark:border-gray-700">
+            <div className="sticky top-0 bg-white dark:bg-gray-800 p-4 border-b dark:border-gray-700 z-10">
               <div className="flex items-center justify-between mb-4">
                 <button
                   onClick={onClose}

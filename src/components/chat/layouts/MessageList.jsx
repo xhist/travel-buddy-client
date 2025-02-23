@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import Message from './Message';
+import {Message} from './Message';
 
 export const MessageList = ({ messages, currentUser, onReact, loadMore, hasMore }) => {
   const observerRef = useRef(null);

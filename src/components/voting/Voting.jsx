@@ -147,8 +147,10 @@ const CreatePollForm = ({ onSubmit, onCancel, initialData = null }) => {
     }
 
     onSubmit({
-      question,
-      options: validOptions.map(opt => ({ text: opt }))
+      question: question.trim(),
+      options: options
+        .filter(opt => opt.trim())
+        .map(opt => ({ text: opt.trim() }))
     });
   };
 

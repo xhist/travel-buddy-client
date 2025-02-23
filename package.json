@@ -6,6 +6,7 @@
     "@emoji-mart/data": "^1.2.1",
     "@emoji-mart/react": "^1.1.1",
     "@headlessui/react": "^1.7.7",
+    "@radix-ui/react-dialog": "^1.1.6",
     "@stomp/stompjs": "^7.0.0",
     "@testing-library/jest-dom": "^5.17.0",
     "@testing-library/react": "^13.4.0",

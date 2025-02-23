@@ -4,9 +4,12 @@ import {
   MessageCircle, 
   UserPlus, 
   X, 
-  Clock,
+  Clock, 
   CheckCircle,
-  Search 
+  Search,
+  ArrowLeft,
+  Users,
+  UserCheck
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useStompClient } from '../../hooks/useStompClient';
@@ -73,14 +76,15 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
         ...prev,
         [userId]: { ...prev[userId], hasPendingRequest: true }
       }));
-      toast.success('Friend request sent!', {
-        icon: '👋',
-        duration: 2000
-      });
+      toast.success('Friend request sent!');
     } catch (err) {
       console.error('Error sending friend request:', err);
       toast.error('Failed to send friend request');
     }
+  };
+
+  const handleProfileClick = (username) => {
+    window.location.href = `/profile/${username}`;
   };
 
   const UserCard = ({ user }) => {
@@ -99,27 +103,25 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
         onMouseLeave={() => setIsHovered(false)}
       >
         <div className="flex items-center gap-4">
-          <motion.div 
-            className="relative"
-            whileHover={{ scale: 1.1 }}
-          >
+          <motion.div className="relative">
             <img
               src={user.profilePicture || "/default-avatar.png"}
               alt={user.username}
-              className="w-12 h-12 rounded-full object-cover ring-2 ring-offset-2 ring-blue-500"
+              className="w-12 h-12 rounded-full object-cover ring-2 ring-offset-2 ring-blue-500 cursor-pointer"
+              onClick={() => handleProfileClick(user.username)}
             />
             <motion.div 
               initial={{ scale: 0.8 }}
               animate={{ scale: 1 }}
-              className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white dark:border-gray-800 rounded-full"
+              className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white 
+                dark:border-gray-800 rounded-full"
             />
           </motion.div>
 
           <div className="flex-1 min-w-0">
             <motion.p 
-              className="font-semibold text-gray-900 dark:text-gray-100 truncate"
-              initial={{ opacity: 0.8 }}
-              animate={{ opacity: 1 }}
+              className="font-semibold text-gray-900 dark:text-gray-100 truncate cursor-pointer"
+              onClick={() => handleProfileClick(user.username)}
             >
               {user.username}
             </motion.p>
@@ -146,7 +148,8 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => onUserChat(user)}
-                  className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-full transition-colors"
+                  className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 
+                    rounded-full transition-colors"
                 >
                   <MessageCircle className="w-5 h-5" />
                 </motion.button>
@@ -156,7 +159,8 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => handleSendFriendRequest(user.id)}
-                    className="p-2 text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-full transition-colors"
+                    className="p-2 text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 
+                      rounded-full transition-colors"
                   >
                     <UserPlus className="w-5 h-5" />
                   </motion.button>
@@ -180,7 +184,7 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
                     className="p-2 text-green-500"
                     title="Friend"
                   >
-                    <CheckCircle className="w-5 h-5" />
+                    <UserCheck className="w-5 h-5" />
                   </motion.div>
                 )}
               </motion.div>
@@ -198,39 +202,35 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
           {/* Mobile backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
-            animate={{ opacity: 1, }}
+            animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="lg:hidden fixed inset-0 bg-black/50"
-            style={{ zIndex: 1001 }}
+            transition={{ duration: 0.2 }}
+            className="lg:hidden fixed inset-0 bg-black/50 z-[1000]"
             onClick={onClose}
           />
 
           {/* Sidebar Container */}
           <motion.div
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 20, zIndex: 999 }}
-            className={`fixed lg:relative inset-y-0 right-0 w-80 bg-gray-50 dark:bg-gray-800 shadow-lg 
-              flex flex-col ${className}`}
-            style={{ zIndex: 999, top: window.innerWidth >= 1024 ? undefined : 0 }}
+            initial={{ x: '100%', zIndex: 100 }}
+            animate={{ x: 0, zIndex: 1001 }}
+            exit={{ x: '100%', zIndex: 100 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            className={`fixed lg:relative right-0 top-0 h-full w-80 bg-white dark:bg-gray-800 
+              shadow-xl flex flex-col z-[100] ${className}`}
           >
             {/* Header */}
-            <motion.div 
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="top-0 bg-gray-50 dark:bg-gray-800 p-4 border-b dark:border-gray-700"
-            >
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-bold text-gray-800 dark:text-gray-200">
-                  Online Users
-                </h3>
+            <div className="top-0 bg-white dark:bg-gray-800 p-4 border-b dark:border-gray-700">
+              <div className="flex items-center justify-between mb-4">
                 <button
                   onClick={onClose}
-                  className="lg:hidden p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+                  className="lg:hidden p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
                 >
-                  <X className="w-5 h-5" />
+                  <ArrowLeft className="w-6 h-6" />
                 </button>
+                <h3 className="text-xl font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                  <Users className="w-5 h-5" />
+                  Online Users
+                </h3>
               </div>
 
               <div className="relative">
@@ -240,15 +240,14 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search users..."
-                  className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-700 border border-gray-200 
-                    dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 
-                    transition-all"
+                  className="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 
+                    dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-            </motion.div>
+            </div>
 
             {/* User List */}
-            <motion.div className="flex-1 overflow-y-auto p-4">
+            <div className="flex-1 overflow-y-auto p-4">
               <div className="space-y-3">
                 <AnimatePresence mode="popLayout">
                   {filteredUsers.length > 0 ? (
@@ -269,7 +268,7 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
                   )}
                 </AnimatePresence>
               </div>
-            </motion.div>
+            </div>
           </motion.div>
         </>
       )}

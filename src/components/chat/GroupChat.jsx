@@ -2,12 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useStompClient } from '../../hooks/useStompClient';
 import { useAuth } from '../../hooks/useAuth';
 import API from '../../api/api';
-import Message from './layouts/Message';
+import { Message, MessageGroup } from './layouts/Message';
 import ChatInput from './layouts/ChatInput';
 import OnlineUsers from './OnlineUsers';
 import { Menu, Users, Loader } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { motion, AnimatePresence } from 'framer-motion';
 
 const GroupChat = ({ tripId }) => {
   const [messages, setMessages] = useState([]);
@@ -34,7 +33,6 @@ const GroupChat = ({ tripId }) => {
         try {
           const receivedMessage = JSON.parse(message.body);
           setMessages(prev => {
-            // Prevent duplicate messages
             if (prev.some(msg => msg.id === receivedMessage.id)) {
               return prev;
             }
@@ -70,6 +68,113 @@ const GroupChat = ({ tripId }) => {
 
     return () => observer.disconnect();
   }, [hasMore, loadingMore, oldestMessageId]);
+
+  const parseTimestamp = (timestamp) => {
+    try {
+      if (!timestamp) return null;
+
+      // If it's already a Date object
+      if (timestamp instanceof Date) {
+        return timestamp;
+      }
+
+      // If it's a PostgreSQL timestamp format (2025-02-22 23:19:40.478380)
+      if (typeof timestamp === 'string' && timestamp.includes('.')) {
+        const parts = timestamp.split('.');
+        return new Date(parts[0].replace(' ', 'T') + 'Z');
+      }
+
+      // Try to parse as regular date string
+      const date = new Date(timestamp);
+      if (!isNaN(date.getTime())) {
+        return date;
+      }
+
+      return null;
+    } catch (e) {
+      console.error('Error parsing timestamp:', timestamp, e);
+      return null;
+    }
+  };
+
+  const getDateKey = (timestamp) => {
+    const date = parseTimestamp(timestamp);
+    if (!date) return 'unknown';
+    return date.toISOString().split('T')[0];
+  };
+
+  const getGroupKeyFromTimestamp = (timestamp) => {
+    try {
+      // Format: "2025-02-22 23:19:40.478380"
+      if (typeof timestamp === 'string') {
+        // Extract just the date part: "2025-02-22"
+        return timestamp.split(' ')[0];
+      }
+      return new Date().toISOString().split('T')[0];
+    } catch (e) {
+      console.error('Error getting group key:', e);
+      return new Date().toISOString().split('T')[0];
+    }
+  };
+
+  const compareTimestamps = (a, b) => {
+    try {
+      // Extract datetime without milliseconds
+      const getTime = (timestamp) => {
+        if (typeof timestamp === 'string') {
+          // Split at the decimal point if exists
+          return timestamp.split('.')[0];
+        }
+        return timestamp;
+      };
+
+      const timeA = new Date(getTime(a.timestamp));
+      const timeB = new Date(getTime(b.timestamp));
+      
+      if (isNaN(timeA.getTime()) || isNaN(timeB.getTime())) {
+        return 0;
+      }
+      
+      return timeB.getTime() - timeA.getTime();
+    } catch (e) {
+      console.error('Error comparing timestamps:', e);
+      return 0;
+    }
+  };
+
+  const groupMessagesByDate = (messages) => {
+    if (!Array.isArray(messages) || messages.length === 0) return [];
+    
+    const groups = {};
+    
+    // Sort messages by timestamp in descending order
+    const sortedMessages = [...messages].sort(compareTimestamps);
+
+    // Group messages by date
+    sortedMessages.forEach(message => {
+      try {
+        if (!message?.timestamp) return;
+
+        const dateKey = getGroupKeyFromTimestamp(message.timestamp);
+        
+        if (!groups[dateKey]) {
+          groups[dateKey] = {
+            timestamp: message.timestamp,
+            messages: [],
+            lastMessageUser: message.sender ? {
+              username: message.sender,
+              profilePicture: message.senderProfilePic || '/default-avatar.png'
+            } : null
+          };
+        }
+        groups[dateKey].messages.push(message);
+      } catch (e) {
+        console.error('Error grouping message:', message, e);
+      }
+    });
+
+    return Object.values(groups);
+  };
 
   const loadInitialMessages = async () => {
     try {
@@ -171,6 +276,51 @@ const GroupChat = ({ tripId }) => {
     }
   };
 
+  const handleCreatePoll = async (pollData) => {
+    try {
+      const response = await API.post(`/trips/${tripId}/polls`, {
+        question: pollData.question,
+        options: pollData.options.map(opt => opt.text)
+      });
+      
+      if (response && response.data) {
+        client.publish({
+          destination: `/app/chat.trip.${tripId}`,
+          body: JSON.stringify({
+            type: 'POLL',
+            pollId: response.data.id || response.data,
+            timestamp: new Date().toISOString()
+          })
+        });
+  
+        toast.success('Poll created successfully');
+      }
+    } catch (error) {
+      console.error('Error creating poll:', error);
+      toast.error('Failed to create poll');
+      throw error;
+    }
+  };
+
+  const handleVote = async (pollId, optionId) => {
+    try {
+      const response = await API.post(`/trips/${tripId}/polls/${pollId}/vote`, {
+        optionId
+      });
+
+      setMessages(prev => 
+        prev.map(msg => 
+          msg.type === 'POLL' && msg.poll?.id === pollId
+            ? { ...msg, poll: response.data }
+            : msg
+        )
+      );
+    } catch (error) {
+      console.error('Error voting in poll:', error);
+      toast.error('Failed to vote in poll');
+    }
+  };
+
   const handleReaction = async (messageId, reactionType) => {
     try {
       const response = await API.post(`/chat/messages/${messageId}/reactions`, {
@@ -199,12 +349,15 @@ const GroupChat = ({ tripId }) => {
     );
   }
 
+  const messageGroups = groupMessagesByDate(messages);
+
   return (
-    <div className="flex h-full min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div className="flex-1 flex flex-col">
+    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Main Chat Area */}
+      <div className="flex-1 flex flex-col h-full">
         {/* Header */}
         <div className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 p-4 
-          flex items-center justify-between sticky top-0 z-10">
+          flex items-center justify-between">
           <h2 className="text-xl font-semibold flex items-center gap-2">
             <Users className="w-5 h-5" />
             Group Chat
@@ -217,42 +370,66 @@ const GroupChat = ({ tripId }) => {
           </button>
         </div>
 
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {loadingMore && (
-            <div className="text-center py-4">
-              <Loader className="w-6 h-6 animate-spin text-blue-500 mx-auto" />
+        {/* Chat Container */}
+        <div className="flex flex-1 overflow-hidden">
+          {/* Messages Area */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {loadingMore && (
+              <div className="text-center py-4">
+                <Loader className="w-6 h-6 animate-spin text-blue-500 mx-auto" />
+              </div>
+            )}
+            {hasMore && <div ref={observerRef} className="h-4" />}
+            <div className="flex flex-col-reverse">
+              {messageGroups.map((group, groupIndex) => (
+                <div key={`${group.timestamp}-${groupIndex}`}>
+                  <MessageGroup timestamp={group.timestamp} />
+                  {group.messages.map((message, messageIndex) => (
+                    <Message
+                      key={message.id}
+                      message={message}
+                      currentUser={user}
+                      onReact={handleReaction}
+                      onVote={handleVote}
+                      isLastInGroup={messageIndex === 0}
+                    />
+                  ))}
+                </div>
+              ))}
             </div>
-          )}
-          {hasMore && <div ref={observerRef} className="h-4" />}
-          <div className="flex flex-col-reverse">
-            {messages.map((message) => (
-              <Message
-                key={message.id}
-                message={message}
-                currentUser={user}
-                onReact={handleReaction}
-              />
-            ))}
+            <div ref={messagesEndRef} />
           </div>
-          <div ref={messagesEndRef} />
+
+          {/* Desktop Sidebar */}
+          <div className="hidden lg:block w-80 border-l dark:border-gray-700">
+            <div className="h-full overflow-y-auto">
+              <OnlineUsers
+                isOpen={true}
+                onClose={() => {}}
+                onUserChat={() => {}}
+              />
+            </div>
+          </div>
         </div>
 
         {/* Chat Input */}
         <ChatInput
           onSend={handleSendMessage}
           onFileSelect={handleFileSelect}
-          onImageSelect={handleFileSelect}
+          onCreatePoll={handleCreatePoll}
         />
       </div>
 
-      {/* Online Users Sidebar */}
-      <OnlineUsers
-        isOpen={showSidebar}
-        onClose={() => setShowSidebar(false)}
-        onUserChat={() => {}}
-        className="lg:h-[calc(100vh-4rem)] lg:top-16"
-      />
+      {/* Mobile Sidebar */}
+      {showSidebar && (
+        <div className="lg:hidden fixed inset-0 z-50">
+          <OnlineUsers
+            isOpen={true}
+            onClose={() => setShowSidebar(false)}
+            onUserChat={() => {}}
+          />
+        </div>
+      )}
     </div>
   );
 };

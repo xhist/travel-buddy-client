@@ -99,7 +99,7 @@ const Profile = () => {
     }
 
     try {
-      const response = await API.post('/api/reviews', {
+      const response = await API.post('/reviews', {
         reviewee: username,
         ...newReview
       });
@@ -116,7 +116,10 @@ const Profile = () => {
 
   const updateProfile = async () => {
     try {
-      const response = await API.put('/api/users/updateProfile', editedProfile);
+      const response = await API.put('/users/updateProfile', { 
+        ...editedProfile, 
+        id: currentUser.id
+      });
       setProfile(response.data);
       setEditing(false);
       toast.success('Profile updated successfully');
@@ -128,7 +131,7 @@ const Profile = () => {
 
   const sendFriendRequest = async () => {
     try {
-      await API.post(`/api/friends/request/${profile.id}`);
+      await API.post(`/friends/${currentUser.id}/request/${profile.id}`);
       setFriendStatus('pending');
       toast.success('Friend request sent');
     } catch (err) {
@@ -192,21 +195,9 @@ const Profile = () => {
             <div className="text-center sm:text-left flex-1">
               <div className="flex items-center justify-center sm:justify-between">
                 <div>
-                  {editing ? (
-                    <input
-                      type="text"
-                      value={editedProfile.username}
-                      onChange={(e) => setEditedProfile({ 
-                        ...editedProfile, 
-                        username: e.target.value 
-                      })}
-                      className="text-3xl font-bold text-gray-800 dark:text-gray-200 bg-transparent border-b focus:outline-none focus:border-blue-500"
-                    />
-                  ) : (
-                    <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-200">
-                      {profile.username}
-                    </h1>
-                  )}
+                  <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-200">
+                    {profile.username}
+                  </h1>
                 </div>
                 {isOwnProfile ? (
                   <div>

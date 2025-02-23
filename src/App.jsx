@@ -7,11 +7,11 @@ import Notifications from './components/layout/Notifications';
 import Login from './components/auth/Login';
 import Register from './components/auth/Register';
 import ProtectedRoute from './components/common/ProtectedRoute';
+import PrivateChatPopup from './components/chat/PrivateChatPopup';
 import Profile from './components/auth/Profile';
 import Dashboard from './components/dashboard/Dashboard';
 import TripDetails from './components/dashboard/TripDetails';
 import GroupChat from './components/chat/GroupChat';
-import PrivateChat from './components/chat/PrivateChat';
 import Friends from './components/social/Friends';
 import CalendarSync from './components/trip/CalendarSync';
 import CreateTrip from './components/trip/CreateTrip';
@@ -44,7 +44,7 @@ function App() {
                             <Route path="/trips/create" element={<CreateTrip /> } />
                             <Route path="/trips/:id" element={<TripDetails />} />
                             <Route path="/trips/:id/chat" element={<GroupChat />} />
-                            <Route path="/friends/:friendId/chat" element={<PrivateChat />} />
+                            <Route path="/friends/:friendId/chat" element={<PrivateChatPopup />} />
                             <Route path="/friends" element={<Friends />} />
                             <Route path="/calendar" element={<CalendarSync tripId={1} />} />
                             <Route path="/admin" element={<AdminDashboard />} />

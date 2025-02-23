@@ -37,7 +37,7 @@ const Itinerary = ({ tripId }) => {
     try {
       const response = await API.post(`/itineraries/${tripId}`, {
         activityName: activityName.trim(),
-        tripId
+        tripId: tripId
       });
 
       if (response.data) {

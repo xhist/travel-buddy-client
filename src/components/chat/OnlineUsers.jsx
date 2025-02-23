@@ -3,9 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   MessageCircle, 
   UserPlus, 
-  X, 
   Clock, 
-  CheckCircle,
   Search,
   ArrowLeft,
   Users,
@@ -35,17 +33,16 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
       }
     });
 
-    client.publish({
-      destination: '/app/presence.getOnlineUsers'
-    });
+    // Request the current list of online users
+    client.publish({ destination: '/app/presence.getOnlineUsers' });
 
     return () => subscription.unsubscribe();
   }, [client, connected, currentUser?.id]);
 
   useEffect(() => {
     setFilteredUsers(
-      users.filter(user => 
-        user.username.toLowerCase().includes(searchQuery.toLowerCase())
+      users.filter(u => 
+        u.username.toLowerCase().includes(searchQuery.toLowerCase())
       )
     );
   }, [users, searchQuery]);
@@ -113,8 +110,7 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
             <motion.div 
               initial={{ scale: 0.8 }}
               animate={{ scale: 1 }}
-              className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white 
-                dark:border-gray-800 rounded-full"
+              className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white dark:border-gray-800 rounded-full"
             />
           </motion.div>
 
@@ -136,143 +132,154 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
             </motion.div>
           </div>
 
-          <AnimatePresence>
-            {isHovered && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                className="flex items-center gap-1"
+          {isHovered && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              className="flex items-center gap-1"
+            >
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => onUserChat(user)}
+                className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-full transition-colors"
               >
+                <MessageCircle className="w-5 h-5" />
+              </motion.button>
+
+              {!friendStatus.status && !friendStatus.hasPendingRequest && (
                 <motion.button
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.95 }}
-                  onClick={() => onUserChat(user)}
-                  className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 
-                    rounded-full transition-colors"
+                  onClick={() => handleSendFriendRequest(user.id)}
+                  className="p-2 text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-full transition-colors"
                 >
-                  <MessageCircle className="w-5 h-5" />
+                  <UserPlus className="w-5 h-5" />
                 </motion.button>
+              )}
 
-                {!friendStatus.status && !friendStatus.hasPendingRequest && (
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => handleSendFriendRequest(user.id)}
-                    className="p-2 text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 
-                      rounded-full transition-colors"
-                  >
-                    <UserPlus className="w-5 h-5" />
-                  </motion.button>
-                )}
+              {friendStatus.hasPendingRequest && (
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  className="p-2 text-yellow-500"
+                  title="Friend request pending"
+                >
+                  <Clock className="w-5 h-5" />
+                </motion.div>
+              )}
 
-                {friendStatus.hasPendingRequest && (
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    className="p-2 text-yellow-500"
-                    title="Friend request pending"
-                  >
-                    <Clock className="w-5 h-5" />
-                  </motion.div>
-                )}
-
-                {friendStatus.status && (
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    className="p-2 text-green-500"
-                    title="Friend"
-                  >
-                    <UserCheck className="w-5 h-5" />
-                  </motion.div>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
+              {friendStatus.status && (
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  className="p-2 text-green-500"
+                  title="Friend"
+                >
+                  <UserCheck className="w-5 h-5" />
+                </motion.div>
+              )}
+            </motion.div>
+          )}
         </div>
       </motion.div>
     );
   };
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          {/* Mobile backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="lg:hidden fixed inset-0 bg-black/50 z-[1000]"
-            onClick={onClose}
-          />
-
-          {/* Sidebar Container */}
-          <motion.div
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className={`fixed lg:static right-0 top-0 lg:top-auto h-full lg:h-auto w-80 bg-white dark:bg-gray-800 
-              shadow-xl flex flex-col z-[1001] ${className}`}
-          >
-            {/* Header */}
-            <div className="sticky top-0 bg-white dark:bg-gray-800 p-4 border-b dark:border-gray-700 z-10">
-              <div className="flex items-center justify-between mb-4">
-                <button
-                  onClick={onClose}
-                  className="lg:hidden p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
-                >
-                  <ArrowLeft className="w-6 h-6" />
-                </button>
-                <h3 className="text-xl font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-                  <Users className="w-5 h-5" />
-                  Online Users
-                </h3>
+    <>
+      {/* Mobile Drawer */}
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="lg:hidden fixed inset-0 bg-black/50 z-[1000]"
+              onClick={onClose}
+            />
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className={`fixed lg:hidden top-0 right-0 h-full w-80 bg-white dark:bg-gray-800 shadow-xl flex flex-col z-[1001] ${className}`}
+            >
+              <div className="sticky top-0 bg-white dark:bg-gray-800 p-4 border-b dark:border-gray-700 z-10">
+                <div className="flex items-center justify-between mb-4">
+                  <button onClick={onClose} className="lg:hidden p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                    <ArrowLeft className="w-6 h-6" />
+                  </button>
+                  <h3 className="text-xl font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                    <Users className="w-5 h-5" />
+                    Online Users
+                  </h3>
+                </div>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search users..."
+                    className="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
               </div>
-
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search users..."
-                  className="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 
-                    dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-
-            {/* User List */}
-            <div className="flex-1 overflow-y-auto p-4">
-              <div className="space-y-3">
-                <AnimatePresence mode="popLayout">
+              <div className="flex-1 overflow-y-auto p-4">
+                <div className="space-y-3">
                   {filteredUsers.length > 0 ? (
-                    filteredUsers.map(user => (
-                      <UserCard key={user.id} user={user} />
-                    ))
+                    filteredUsers.map(user => <UserCard key={user.id} user={user} />)
                   ) : (
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="text-center py-8"
-                    >
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center py-8">
                       <p className="text-gray-500 dark:text-gray-400">
                         {searchQuery ? 'No users match your search' : 'No users online'}
                       </p>
                     </motion.div>
                   )}
-                </AnimatePresence>
+                </div>
               </div>
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Desktop Sidebar */}
+      <div className={`hidden lg:flex flex-col bg-white dark:bg-gray-800 ${className}`}>
+        <div className="p-4 border-b dark:border-gray-700">
+          <h3 className="text-xl font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+            <Users className="w-5 h-5" />
+            Online Users
+          </h3>
+          <div className="relative mt-3">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search users..."
+              className="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          <div className="space-y-3">
+            {filteredUsers.length > 0 ? (
+              filteredUsers.map(user => <UserCard key={user.id} user={user} />)
+            ) : (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center py-8">
+                <p className="text-gray-500 dark:text-gray-400">
+                  {searchQuery ? 'No users match your search' : 'No users online'}
+                </p>
+              </motion.div>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
   );
 };
 

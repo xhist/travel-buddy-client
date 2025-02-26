@@ -16,19 +16,8 @@ const MessageReactions = ({ message, onReact, isOwnMessage, showReactions, onRea
   const [selectedReaction, setSelectedReaction] = useState(null);
   const menuRef = useRef(null);
 
-  // Debug logging to verify the data
-  useEffect(() => {
-    console.log("MessageReactions for message:", message.id, "reactions:", message.reactions);
-  }, [message]);
-
-  const handleReactionClick = (reactionType) => {
-    onReact(message.id, reactionType);
-    // Hide the picker after selection
-    if (onReactionSelect) onReactionSelect();
-  };
-
-  // Compute reaction counts based on the database structure.
-  // Each reaction should have a reactionType.
+  // Get reaction counts based on the database structure
+  // Each reaction should have a reactionType
   const getReactionCounts = () => {
     const counts = {};
     if (message.reactions && Array.isArray(message.reactions)) {
@@ -39,8 +28,14 @@ const MessageReactions = ({ message, onReact, isOwnMessage, showReactions, onRea
             counts[type] = { count: 0, users: [] };
           }
           counts[type].count += 1;
-          // Create a simple placeholder user object since only userId is provided.
-          counts[type].users.push({ id: reaction.userId, username: `User ${reaction.userId}` });
+          
+          // Store user data if available
+          if (reaction.userId) {
+            counts[type].users.push({ 
+              id: reaction.userId, 
+              username: reaction.senderUsername || reaction.username || `User ${reaction.userId}` 
+            });
+          }
         }
       });
     }
@@ -48,11 +43,17 @@ const MessageReactions = ({ message, onReact, isOwnMessage, showReactions, onRea
   };
 
   const reactionCounts = getReactionCounts();
-  console.log("Computed reactionCounts for message:", message.id, reactionCounts);
+
+  const handleReactionClick = (reactionType) => {
+    onReact(message.id, reactionType);
+    // Hide the picker after selection
+    if (onReactionSelect) onReactionSelect();
+  };
 
   // Dialog for listing users for a given reaction type
   const ReactionUsersList = ({ reactionType, reactionData }) => {
     if (!reactionData || reactionData.count === 0) return null;
+    
     return (
       <Dialog.Root
         open={selectedReaction === reactionType}
@@ -69,10 +70,11 @@ const MessageReactions = ({ message, onReact, isOwnMessage, showReactions, onRea
                 {reactionData.users.map((user, index) => (
                   <div
                     key={user.id || index}
-                    className="flex items-center gap-3 p-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg transition-colors"
+                    className="flex items-center gap-3 p-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg transition-colors cursor-pointer"
+                    onClick={() => window.location.href = `/profile/${user.username}`}
                   >
                     <img
-                      src={'/default-avatar.png'}
+                      src={user.profilePicture || '/default-avatar.png'}
                       alt={user.username || 'User'}
                       className="w-8 h-8 rounded-full"
                     />
@@ -124,7 +126,7 @@ const MessageReactions = ({ message, onReact, isOwnMessage, showReactions, onRea
         <motion.div 
           initial={{ opacity: 0, scale: 0.5 }}
           animate={{ opacity: 1, scale: 1 }}
-          className={`absolute ${isOwnMessage ? 'right-0' : 'left-0'} top-full mt-2 bg-white dark:bg-gray-800 rounded-full shadow-md px-2 py-1 flex items-center gap-1 z-10 text-sm border dark:border-gray-700`}
+          className={`absolute ${isOwnMessage ? 'right-0' : 'left-0'} bottom-0 translate-y-full mt-1 mb-2 bg-white dark:bg-gray-800 rounded-full shadow-md px-2 py-1 flex items-center gap-1 z-10 text-sm border dark:border-gray-700`}
         >
           {Object.keys(reactionCounts).map(type => (
             <button

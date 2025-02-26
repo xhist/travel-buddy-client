@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Send, 
@@ -14,13 +14,20 @@ import data from '@emoji-mart/data';
 import Picker from '@emoji-mart/react';
 import { CreatePollForm } from '../../voting/Voting';
 
-const ChatInput = ({ onSend, onFileSelect, onCreatePoll }) => {
+const ChatInput = ({ onSend, onFileSelect, onCreatePoll, onInputChange }) => {
   const [message, setMessage] = useState('');
   const [showMenu, setShowMenu] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showPollModal, setShowPollModal] = useState(false);
   const fileInputRef = useRef(null);
   const imageInputRef = useRef(null);
+
+  // Notify parent about input changes for typing indicator
+  useEffect(() => {
+    if (onInputChange) {
+      onInputChange(message);
+    }
+  }, [message, onInputChange]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -115,18 +122,20 @@ const ChatInput = ({ onSend, onFileSelect, onCreatePoll }) => {
                   <File className="w-4 h-4" />
                   <span>Upload File</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPollModal(true);
-                    setShowMenu(false);
-                  }}
-                  className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-gray-100 
-                    dark:hover:bg-gray-700 transition-colors"
-                >
-                  <Vote className="w-4 h-4" />
-                  <span>Create Poll</span>
-                </button>
+                {onCreatePoll && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPollModal(true);
+                      setShowMenu(false);
+                    }}
+                    className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-gray-100 
+                      dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <Vote className="w-4 h-4" />
+                    <span>Create Poll</span>
+                  </button>
+                )}
               </motion.div>
             )}
           </AnimatePresence>

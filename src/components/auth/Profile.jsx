@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import { useChatContext } from '../contexts/ChatContext';
 import API from '../../api/api';
 import { 
   Star, 
@@ -13,7 +14,10 @@ import {
   UserPlus, 
   Mail,
   CheckCircle,
-  Clock as PendingClock
+  Clock as PendingClock,
+  Camera,
+  UserCheck,
+  MessageSquare
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -41,6 +45,7 @@ const StarRating = ({ rating, onRatingChange, readonly = false }) => {
 const Profile = () => {
   const { username } = useParams();
   const { user: currentUser } = useAuth();
+  const { handleStartChat } = useChatContext();
   const [profile, setProfile] = useState(null);
   const [trips, setTrips] = useState([]);
   const [reviews, setReviews] = useState([]);
@@ -53,6 +58,7 @@ const Profile = () => {
   const [editing, setEditing] = useState(false);
   const [editedProfile, setEditedProfile] = useState(null);
   const [friendStatus, setFriendStatus] = useState(null); // 'friends', 'pending', null
+  const fileInputRef = useRef(null);
 
   const isOwnProfile = currentUser?.username === username;
 
@@ -79,7 +85,7 @@ const Profile = () => {
       // Find current user's review if it exists
       if (!isOwnProfile) {
         const userReview = reviewsRes.data.find(
-          review => review.reviewer.username === currentUser?.username
+          review => review.reviewer === currentUser?.username
         );
         setUserReview(userReview);
       }
@@ -101,11 +107,12 @@ const Profile = () => {
     try {
       const response = await API.post('/reviews', {
         reviewee: username,
+        reviewer: currentUser.username,
         ...newReview
       });
 
       setReviews(response.data);
-      setUserReview(response.data.find(r => r.reviewer.username === currentUser.username));
+      setUserReview(response.data.find(r => r.reviewer === currentUser.username));
       setNewReview({ rating: 5, comment: '' });
       toast.success('Review submitted successfully');
     } catch (err) {
@@ -132,11 +139,58 @@ const Profile = () => {
   const sendFriendRequest = async () => {
     try {
       await API.post(`/friends/${currentUser.id}/request/${profile.id}`);
-      setFriendStatus('pending');
+      setFriendStatus({ hasPendingRequest: true });
       toast.success('Friend request sent');
     } catch (err) {
       console.error('Error sending friend request:', err);
       toast.error('Failed to send friend request');
+    }
+  };
+
+  const startChat = () => {
+    if (handleStartChat && profile) {
+      handleStartChat(profile);
+    }
+  };
+
+  const handleProfilePictureUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Only proceed if it's an image
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file');
+      return;
+    }
+
+    try {
+      // Create FormData and append the file
+      const formData = new FormData();
+      formData.append('file', file);
+
+      // Upload the image
+      const response = await API.post('/users/upload-profile-picture', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+
+      // Update the profile picture URL in the edited profile
+      setEditedProfile({
+        ...editedProfile,
+        profilePicture: response.data.url
+      });
+
+      toast.success('Profile picture uploaded');
+    } catch (err) {
+      console.error('Error uploading profile picture:', err);
+      toast.error('Failed to upload profile picture');
+    }
+  };
+
+  const triggerFileInput = () => {
+    if (editing) {
+      fileInputRef.current.click();
     }
   };
 
@@ -164,89 +218,116 @@ const Profile = () => {
     <div className="container mx-auto px-4 py-8 max-w-6xl">
       {/* Profile Header */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden mb-8">
-        <div className="h-32 bg-gradient-to-r from-blue-500 to-purple-600"></div>
+        <div className="h-32 sm:h-64 bg-gradient-to-r from-blue-500 to-purple-600"></div>
         <div className="px-6 py-4 relative">
           <div className="flex flex-col sm:flex-row items-center gap-6">
-            {editing ? (
-              <div className="relative group">
-                <img
-                  src={editedProfile.profilePicture || '/default-avatar.png'}
-                  alt={editedProfile.username}
-                  className="w-32 h-32 rounded-full object-cover shadow-lg border-4 border-white dark:border-gray-800 -mt-16"
-                />
-                <input
-                  type="text"
-                  value={editedProfile.profilePicture || ''}
-                  onChange={(e) => setEditedProfile({ 
-                    ...editedProfile, 
-                    profilePicture: e.target.value 
-                  })}
-                  placeholder="Profile picture URL"
-                  className="absolute bottom-0 left-0 w-full px-2 py-1 text-sm bg-black/50 text-white"
-                />
-              </div>
-            ) : (
-              <img
-                src={profile.profilePicture || '/default-avatar.png'}
-                alt={profile.username}
-                className="w-32 h-32 rounded-full object-cover shadow-lg border-4 border-white dark:border-gray-800 -mt-16"
+            <div className="relative group -mt-16"> {/* Fixed positioning by adding negative margin */}
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleProfilePictureUpload} 
+                className="hidden" 
+                accept="image/*"
               />
-            )}
+              <div 
+                className={`relative rounded-full overflow-hidden cursor-${editing ? 'pointer' : 'default'}`}
+                onClick={triggerFileInput}
+              >
+                <img
+                  src={editing ? editedProfile.profilePicture || '/default-avatar.png' : profile.profilePicture || '/default-avatar.png'}
+                  alt={profile.username}
+                  className="w-32 h-32 object-cover border-4 border-white dark:border-gray-800"
+                />
+                {editing && (
+                  <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Camera className="w-10 h-10 text-white" />
+                  </div>
+                )}
+              </div>
+            </div>
             <div className="text-center sm:text-left flex-1">
               <div className="flex items-center justify-center sm:justify-between">
                 <div>
                   <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-200">
                     {profile.username}
                   </h1>
+                  {editing && (
+                    <div className="mt-2">
+                      <label className="block text-sm text-gray-600 dark:text-gray-400">Email</label>
+                      <input
+                        type="email"
+                        value={editedProfile.email || ''}
+                        onChange={(e) => setEditedProfile({
+                          ...editedProfile,
+                          email: e.target.value
+                        })}
+                        className="mt-1 px-3 py-2 text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-700 border rounded focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  )}
                 </div>
-                {isOwnProfile ? (
-                  <div>
-                    {editing ? (
-                      <button
-                        onClick={updateProfile}
-                        className="ml-4 p-2 text-green-500 hover:text-green-600 transition-colors"
+                <div>
+                  {isOwnProfile ? (
+                    <div>
+                      {editing ? (
+                        <button
+                          onClick={updateProfile}
+                          className="ml-4 p-2 text-green-500 hover:text-green-600 transition-colors"
+                        >
+                          <Check className="w-6 h-6" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setEditing(true)}
+                          className="ml-4 p-2 text-blue-500 hover:text-blue-600 transition-colors"
+                        >
+                          <Edit className="w-6 h-6" />
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      {friendStatus?.status ? (
+                        <div className="flex items-center gap-2 px-4 py-2 bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-300 rounded-lg">
+                          <UserCheck className="w-5 h-5" />
+                          <span>Friends</span>
+                        </div>
+                      ) : friendStatus?.hasPendingRequest ? (
+                        <div className="flex items-center gap-2 px-4 py-2 bg-yellow-100 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 rounded-lg">
+                          <PendingClock className="w-5 h-5" />
+                          <span>Request Pending</span>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={sendFriendRequest}
+                          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                          <UserPlus className="w-5 h-5" />
+                          Add Friend
+                        </button>
+                      )}
+                      <button 
+                        onClick={startChat}
+                        className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
                       >
-                        <Check className="w-6 h-6" />
+                        <MessageSquare className="w-5 h-5" />
+                        <span className="hidden sm:inline">Message</span>
                       </button>
-                    ) : (
                       <button
-                        onClick={() => setEditing(true)}
-                        className="ml-4 p-2 text-blue-500 hover:text-blue-600 transition-colors"
+                        onClick={() => window.location.href = `mailto:${profile.email}`}
+                        className="p-2 text-gray-500 hover:text-gray-600 transition-colors"
                       >
-                        <Edit className="w-6 h-6" />
+                        <Mail className="w-5 h-5" />
                       </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    {friendStatus === 'friends' ? (
-                      <span className="flex items-center gap-2 text-green-500">
-                        <CheckCircle className="w-5 h-5" />
-                        Friends
-                      </span>
-                    ) : friendStatus === 'pending' ? (
-                      <span className="flex items-center gap-2 text-yellow-500">
-                        <PendingClock className="w-5 h-5" />
-                        Request Pending
-                      </span>
-                    ) : (
-                      <button
-                        onClick={sendFriendRequest}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                      >
-                        <UserPlus className="w-5 h-5" />
-                        Add Friend
-                      </button>
-                    )}
-                    <button
-                      onClick={() => window.location.href = `mailto:${profile.email}`}
-                      className="p-2 text-gray-500 hover:text-gray-600 transition-colors"
-                    >
-                      <Mail className="w-5 h-5" />
-                    </button>
-                  </div>
-                )}
+                    </div>
+                  )}
+                </div>
               </div>
+              {!editing && profile.email && (
+                <p className="text-gray-600 dark:text-gray-400 mt-2">
+                  {profile.email}
+                </p>
+              )}
               {editing ? (
                 <textarea
                   value={editedProfile.bio || ''}
@@ -374,22 +455,28 @@ const Profile = () => {
                 <div
                   key={review.id}
                   className={`bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 ${
-                    review.reviewer.username === currentUser?.username 
+                    review.reviewer === currentUser?.username 
                       ? 'border-2 border-blue-500'
                       : ''
                   }`}
                 >
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-4">
-                      <img
-                        src={review.reviewer.profilePicture || '/default-avatar.png'}
-                        alt={review.reviewer.username}
-                        className="w-10 h-10 rounded-full object-cover"
-                      />
+                      <div className="relative group">
+                        <img
+                          src={review.reviewer.profilePicture || '/default-avatar.png'}
+                          alt={review.reviewer}
+                          className="w-10 h-10 rounded-full object-cover cursor-pointer"
+                          onClick={() => window.location.href = `/profile/${review.reviewer}`}
+                        />
+                        <div className="absolute opacity-0 group-hover:opacity-100 bottom-0 left-1/2 transform -translate-x-1/2 translate-y-full transition-opacity bg-gray-900 text-white text-xs rounded py-1 px-2 pointer-events-none whitespace-nowrap">
+                          {review.reviewer}
+                        </div>
+                      </div>
                       <div>
                         <p className="font-medium text-gray-800 dark:text-gray-200">
-                          {review.reviewer.username}
-                          {review.reviewer.username === currentUser?.username && (
+                          {review.reviewer}
+                          {review.reviewer === currentUser?.username && (
                             <span className="ml-2 text-sm text-blue-500">(Your Review)</span>
                           )}
                         </p>
@@ -399,7 +486,7 @@ const Profile = () => {
                     <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
                       <Clock className="w-4 h-4" />
                       <span className="text-sm">
-                        {new Date(review.dateReviewed).toLocaleDateString()}
+                        {review.dateReviewed ? new Date(review.dateReviewed).toLocaleDateString() : 'Recently'}
                       </span>
                     </div>
                   </div>

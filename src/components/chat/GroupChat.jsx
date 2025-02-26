@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useParams } from 'react-router-dom';
 import { useStompClient } from '../../hooks/useStompClient';
 import { useAuth } from '../../hooks/useAuth';
 import API from '../../api/api';
@@ -8,7 +9,9 @@ import OnlineUsers from './OnlineUsers';
 import { Menu, Users, Loader } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-const GroupChat = ({ tripId }) => {
+const GroupChat = ({ tripId: propTripId }) => {
+  const { id: paramTripId } = useParams();
+  const resolvedTripId = propTripId || paramTripId;
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
@@ -24,12 +27,33 @@ const GroupChat = ({ tripId }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  // Subscribe to room-specific presence
+  useEffect(() => {
+    if (!client || !connected || !resolvedTripId) return;
+
+    // Join the chat room
+    client.publish({
+      destination: `/app/room.${resolvedTripId}.join`,
+      body: JSON.stringify({})
+    });
+
+    // Clean up function to leave the room
+    return () => {
+      if (client && connected) {
+        client.publish({
+          destination: `/app/room.${resolvedTripId}.leave`,
+          body: JSON.stringify({})
+        });
+      }
+    };
+  }, [client, connected, resolvedTripId]);
+
   // Subscribe to new messages
   useEffect(() => {
-    if (!client || !connected) return;
+    if (!client || !connected || !resolvedTripId) return;
 
     const subscription = client.subscribe(
-      `/topic/trip/${tripId}`,
+      `/topic/trip/${resolvedTripId}`,
       (message) => {
         try {
           const receivedMessage = JSON.parse(message.body);
@@ -46,12 +70,14 @@ const GroupChat = ({ tripId }) => {
     );
 
     return () => subscription.unsubscribe();
-  }, [client, connected, tripId]);
+  }, [client, connected, resolvedTripId]);
 
   // Load initial messages
   useEffect(() => {
-    loadInitialMessages();
-  }, [tripId, client, connected]);
+    if (resolvedTripId) {
+      loadInitialMessages();
+    }
+  }, [resolvedTripId, client, connected]);
 
   // Infinite scroll observer
   useEffect(() => {
@@ -88,12 +114,6 @@ const GroupChat = ({ tripId }) => {
     return isNaN(date.getTime()) ? null : date;
   };
 
-  /**
-   * getGroupKeyFromTimestamp:
-   * - If the message is from today, returns "HH:mm"
-   * - If from the current year (but not today), returns "DD MMM at HH:mm" (e.g. "22 FEB at 13:50")
-   * - If older than the current year, returns "DD/MM/YYYY at HH:mm" (e.g. "22/03/2020 at 13:50")
-   */
   const getGroupKeyFromTimestamp = (timestamp) => {
     const date = parseTimestamp(timestamp);
     if (!date) return 'Unknown';
@@ -165,10 +185,10 @@ const GroupChat = ({ tripId }) => {
   // Data Fetching
   // --------------------
   const loadInitialMessages = async () => {
-    if (!client || !connected) return;
+    if (!resolvedTripId) return;
     try {
       setLoading(true);
-      const response = await API.get(`/chat/messages/trip/${tripId}`, { params: { limit: 20 } });
+      const response = await API.get(`/chat/messages/trip/${resolvedTripId}`, { params: { limit: 20 } });
       if (response.data.length < 20) setHasMore(false);
       if (response.data.length > 0) {
         setMessages(response.data);
@@ -184,10 +204,10 @@ const GroupChat = ({ tripId }) => {
   };
 
   const loadMoreMessages = async () => {
-    if (!hasMore || !oldestMessageId || !client || !connected) return;
+    if (!hasMore || !oldestMessageId || !resolvedTripId) return;
     try {
       setLoadingMore(true);
-      const response = await API.get(`/chat/messages/trip/${tripId}`, {
+      const response = await API.get(`/chat/messages/trip/${resolvedTripId}`, {
         params: {
           before: oldestMessageId,
           limit: 20
@@ -211,13 +231,13 @@ const GroupChat = ({ tripId }) => {
   // Message Actions
   // --------------------
   const handleSendMessage = (content) => {
-    if (!client || !connected) {
+    if (!client || !connected || !resolvedTripId) {
       toast.error('Not connected to chat server');
       return;
     }
     try {
       client.publish({
-        destination: `/app/chat.trip.${tripId}`,
+        destination: `/app/chat.trip.${resolvedTripId}`,
         body: JSON.stringify({
           content,
           type: 'TEXT',
@@ -237,12 +257,12 @@ const GroupChat = ({ tripId }) => {
       const response = await API.post('/chat/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      if (!client || !connected) {
+      if (!client || !connected || !resolvedTripId) {
         toast.error('Not connected to chat server');
         return;
       }
       client.publish({
-        destination: `/app/chat.trip.${tripId}`,
+        destination: `/app/chat.trip.${resolvedTripId}`,
         body: JSON.stringify({
           content: response.data.fileUrl,
           fileName: response.data.fileName,
@@ -257,14 +277,19 @@ const GroupChat = ({ tripId }) => {
   };
 
   const handleCreatePoll = async (pollData) => {
+    if (!resolvedTripId) {
+      toast.error('Trip ID is missing');
+      return;
+    }
+
     try {
-      const response = await API.post(`/trips/${tripId}/polls`, {
+      const response = await API.post(`/trips/${resolvedTripId}/polls`, {
         question: pollData.question,
         options: pollData.options.map(opt => opt.text)
       });
       if (response && response.data) {
         client.publish({
-          destination: `/app/chat.trip.${tripId}`,
+          destination: `/app/chat.trip.${resolvedTripId}`,
           body: JSON.stringify({
             type: 'POLL',
             pollId: response.data.id || response.data,
@@ -281,8 +306,13 @@ const GroupChat = ({ tripId }) => {
   };
 
   const handleVote = async (pollId, optionId) => {
+    if (!resolvedTripId) {
+      toast.error('Trip ID is missing');
+      return;
+    }
+
     try {
-      const response = await API.post(`/trips/${tripId}/polls/${pollId}/vote`, { optionId });
+      const response = await API.post(`/trips/${resolvedTripId}/polls/${pollId}/vote`, { optionId });
       setMessages(prev => 
         prev.map(msg =>
           msg.type === 'POLL' && msg.poll?.id === pollId
@@ -299,7 +329,7 @@ const GroupChat = ({ tripId }) => {
   const handleReaction = async (messageId, reactionType) => {
     try {
       const response = await API.post(`/chat/messages/${messageId}/reactions`, { reactionType });
-      // Update the message's reactions using the API response so the UI updates immediately
+      // Update the message's reactions using the API response
       setMessages(prev =>
         prev.map(msg =>
           msg.id === messageId ? { ...msg, reactions: response.data.reactions } : msg
@@ -320,6 +350,16 @@ const GroupChat = ({ tripId }) => {
         <div className="flex flex-col items-center gap-3">
           <Loader className="w-8 h-8 animate-spin text-blue-500" />
           <p className="text-gray-500">Loading messages...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!resolvedTripId) {
+    return (
+      <div className="flex justify-center items-center p-8">
+        <div className="bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-200 p-4 rounded-lg text-center">
+          Trip ID is missing. Please ensure you're viewing this page correctly.
         </div>
       </div>
     );
@@ -370,12 +410,13 @@ const GroupChat = ({ tripId }) => {
           </div>
           {/* Desktop Sidebar */}
           <div className="hidden lg:flex flex-col w-80 border-l dark:border-gray-700 bg-white dark:bg-gray-800 h-full">
-            <OnlineUsers isOpen={true} onClose={() => {}} onUserChat={() => {}} className="flex-1" />
+            <OnlineUsers isOpen={true} onClose={() => {}} tripId={resolvedTripId} className="flex-1" />
           </div>
         </div>
         <ChatInput onSend={handleSendMessage} onFileSelect={handleFileSelect} onCreatePoll={handleCreatePoll} />
       </div>
-      <OnlineUsers isOpen={showSidebar} onClose={() => setShowSidebar(false)} onUserChat={() => {}} className="lg:hidden" />
+      {/* Mobile Sidebar */}
+      <OnlineUsers isOpen={showSidebar} onClose={() => setShowSidebar(false)} tripId={resolvedTripId} className="lg:hidden" />
     </div>
   );
 };

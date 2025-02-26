@@ -97,7 +97,7 @@ const Message = ({ message, currentUser, onReact, onVote, isLastInGroup }) => {
   };
 
   return (
-    <div className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'} mb-4 relative min-h-[40px]`}>
+    <div className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'} mb-6 relative min-h-[40px]`}>
       <div className={`flex items-end gap-2 max-w-[85%] sm:max-w-[75%] ${isOwnMessage ? 'flex-row-reverse' : 'flex-row'}`}>
         <div className="w-8 relative">
           {isLastInGroup && (
@@ -118,8 +118,12 @@ const Message = ({ message, currentUser, onReact, onVote, isLastInGroup }) => {
             </div>
           )}
         </div>
-        <div className={`flex flex-col ${isOwnMessage ? 'items-end' : 'items-start'}`}>
-          <div className="relative" onMouseEnter={() => setShowReactions(true)} onMouseLeave={() => setShowReactions(false)}>
+        <div className={`flex flex-col ${isOwnMessage ? 'items-end' : 'items-start'} relative`}>
+          <div 
+            className="relative" 
+            onMouseEnter={() => setShowReactions(true)} 
+            onMouseLeave={() => setShowReactions(false)}
+          >
             <div className={`max-w-full ${isOwnMessage ? 'bg-blue-600 text-white rounded-l-lg rounded-tr-lg' : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-r-lg rounded-tl-lg'} p-3 shadow-sm hover:shadow-md transition-shadow`}>
               {message.type === 'IMAGE' ? (
                 <img src={message.content} alt="Shared" className="max-w-full h-auto rounded-lg object-contain" />
@@ -140,7 +144,13 @@ const Message = ({ message, currentUser, onReact, onVote, isLastInGroup }) => {
                 {formatTime(message.timestamp) || 'No time'}
               </div>
             </div>
-            <MessageReactions message={message} onReact={onReact} isOwnMessage={isOwnMessage} showReactions={showReactions} />
+            <MessageReactions 
+              message={message} 
+              onReact={onReact} 
+              isOwnMessage={isOwnMessage} 
+              showReactions={showReactions}
+              onReactionSelect={() => setShowReactions(false)} 
+            />
           </div>
         </div>
       </div>

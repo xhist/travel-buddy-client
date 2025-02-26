@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   MessageCircle, 
@@ -11,38 +11,91 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useStompClient } from '../../hooks/useStompClient';
+import { useChatContext } from '../contexts/ChatContext';
 import API from '../../api/api';
 import toast from 'react-hot-toast';
 
-const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
+const OnlineUsers = ({ isOpen, onClose, tripId, className = "" }) => {
   const [users, setUsers] = useState([]);
   const [filteredUsers, setFilteredUsers] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [friendStatuses, setFriendStatuses] = useState({});
   const { user: currentUser } = useAuth();
   const { client, connected } = useStompClient();
+  const { handleStartChat } = useChatContext();
 
+  // Subscribe to room-specific presence (if tripId provided) or global presence
   useEffect(() => {
     if (!client || !connected) return;
 
-    const subscription = client.subscribe('/topic/presence', (message) => {
-      const presenceData = JSON.parse(message.body);
-      if (Array.isArray(presenceData)) {
-        const otherUsers = presenceData.filter(u => u.id !== currentUser?.id);
-        setUsers(otherUsers);
+    // Different subscription topic based on whether we're in a trip chat room
+    const topic = tripId 
+      ? `/topic/room/${tripId}/users` 
+      : '/topic/presence';
+
+    const subscription = client.subscribe(topic, (message) => {
+      try {
+        const presenceData = JSON.parse(message.body);
+        
+        if (Array.isArray(presenceData)) {
+          // Full list of online users
+          const otherUsers = presenceData.filter(u => 
+            u.username !== currentUser?.username && 
+            u.id !== currentUser?.id
+          );
+          setUsers(otherUsers);
+        } else if (presenceData.username && presenceData.status) {
+          // Individual user status update
+          setUsers(prev => {
+            if (presenceData.status === 'ONLINE') {
+              if (!prev.some(u => u.username === presenceData.username || u.id === presenceData.id)) {
+                return [...prev, presenceData];
+              }
+              return prev;
+            } else {
+              return prev.filter(u => u.username !== presenceData.username && u.id !== presenceData.id);
+            }
+          });
+        }
+      } catch (error) {
+        console.error('Error parsing presence data:', error);
       }
     });
 
-    // Request the current list of online users
-    client.publish({ destination: '/app/presence.getOnlineUsers' });
+    // Request current online users - different endpoint based on context
+    if (tripId) {
+      // Join the room
+      client.publish({ 
+        destination: `/app/room.${tripId}.join`,
+        body: JSON.stringify({})
+      });
+    } else {
+      client.publish({ 
+        destination: '/app/presence.getOnlineUsers',
+        body: JSON.stringify({})
+      });
+    }
 
-    return () => subscription.unsubscribe();
-  }, [client, connected, currentUser?.id]);
+    return () => {
+      if (subscription) {
+        subscription.unsubscribe();
+      }
+      
+      // Leave the room if needed
+      if (tripId && client && connected) {
+        client.publish({ 
+          destination: `/app/room.${tripId}.leave`,
+          body: JSON.stringify({})
+        });
+      }
+    };
+  }, [client, connected, currentUser?.id, currentUser?.username, tripId]);
 
   useEffect(() => {
     setFilteredUsers(
       users.filter(u => 
-        u.username.toLowerCase().includes(searchQuery.toLowerCase())
+        (u.username && u.username.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (u.name && u.name.toLowerCase().includes(searchQuery.toLowerCase()))
       )
     );
   }, [users, searchQuery]);
@@ -51,20 +104,22 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
     const loadFriendStatuses = async () => {
       const statuses = {};
       for (const user of users) {
-        try {
-          const response = await API.get(`/friends/status/${user.username}`);
-          statuses[user.id] = response.data;
-        } catch (err) {
-          console.error(`Error loading friend status for ${user.username}:`, err);
+        if (user.username) {
+          try {
+            const response = await API.get(`/friends/status/${user.username}`);
+            statuses[user.id] = response.data;
+          } catch (err) {
+            console.error(`Error loading friend status for ${user.username}:`, err);
+          }
         }
       }
       setFriendStatuses(statuses);
     };
 
-    if (users.length > 0) {
+    if (users.length > 0 && currentUser) {
       loadFriendStatuses();
     }
-  }, [users]);
+  }, [users, currentUser]);
 
   const handleSendFriendRequest = async (userId) => {
     try {
@@ -81,12 +136,24 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
   };
 
   const handleProfileClick = (username) => {
-    window.location.href = `/profile/${username}`;
+    if (username) {
+      window.location.href = `/profile/${username}`;
+    }
+  };
+
+  const handleStartChatWithUser = (user) => {
+    if (handleStartChat) {
+      handleStartChat(user);
+      if (onClose) onClose(); // Close the sidebar on mobile after starting a chat
+    }
   };
 
   const UserCard = ({ user }) => {
     const friendStatus = friendStatuses[user.id] || {};
     const [isHovered, setIsHovered] = useState(false);
+    const username = user.username || user.name;
+
+    if (!username) return null;
 
     return (
       <motion.div
@@ -103,9 +170,9 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
           <motion.div className="relative">
             <img
               src={user.profilePicture || "/default-avatar.png"}
-              alt={user.username}
+              alt={username}
               className="w-12 h-12 rounded-full object-cover ring-2 ring-offset-2 ring-blue-500 cursor-pointer"
-              onClick={() => handleProfileClick(user.username)}
+              onClick={() => handleProfileClick(username)}
             />
             <motion.div 
               initial={{ scale: 0.8 }}
@@ -117,9 +184,9 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
           <div className="flex-1 min-w-0">
             <motion.p 
               className="font-semibold text-gray-900 dark:text-gray-100 truncate cursor-pointer"
-              onClick={() => handleProfileClick(user.username)}
+              onClick={() => handleProfileClick(username)}
             >
-              {user.username}
+              {username}
             </motion.p>
             <motion.div
               initial={{ opacity: 0, y: -10 }}
@@ -142,7 +209,7 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
               <motion.button
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => onUserChat(user)}
+                onClick={() => handleStartChatWithUser(user)}
                 className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-full transition-colors"
               >
                 <MessageCircle className="w-5 h-5" />
@@ -215,7 +282,7 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
                   </button>
                   <h3 className="text-xl font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
                     <Users className="w-5 h-5" />
-                    Online Users
+                    {tripId ? 'Room Members' : 'Online Users'}
                   </h3>
                 </div>
                 <div className="relative">
@@ -252,7 +319,7 @@ const OnlineUsers = ({ isOpen, onClose, onUserChat, className = "" }) => {
         <div className="p-4 border-b dark:border-gray-700">
           <h3 className="text-xl font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
             <Users className="w-5 h-5" />
-            Online Users
+            {tripId ? 'Room Members' : 'Online Users'}
           </h3>
           <div className="relative mt-3">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />

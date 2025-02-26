@@ -1,23 +1,31 @@
 import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import API from '../../api/api';
 import { useAuth } from '../../hooks/useAuth';
 import { PlusCircle, X, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-const Itinerary = ({ tripId }) => {
+const Itinerary = ({ tripId: propTripId }) => {
+  const params = useParams();
+  const resolvedTripId = propTripId || params.id;
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activityName, setActivityName] = useState('');
   const { user } = useAuth();
 
   useEffect(() => {
-    fetchItinerary();
-  }, [tripId]);
+    if (resolvedTripId) {
+      fetchItinerary();
+    } else {
+      console.error("No tripId provided to Itinerary component");
+      setLoading(false);
+    }
+  }, [resolvedTripId]);
 
   const fetchItinerary = async () => {
     try {
       setLoading(true);
-      const response = await API.get(`/itineraries/${tripId}`);
+      const response = await API.get(`/itineraries/${resolvedTripId}`);
       setItems(response.data || []);
     } catch (err) {
       console.error('Error fetching itinerary:', err);
@@ -34,10 +42,15 @@ const Itinerary = ({ tripId }) => {
       return;
     }
 
+    if (!resolvedTripId) {
+      toast.error('Trip ID is missing');
+      return;
+    }
+
     try {
-      const response = await API.post(`/itineraries/${tripId}`, {
+      const response = await API.post(`/itineraries/${resolvedTripId}`, {
         activityName: activityName.trim(),
-        tripId: tripId
+        tripId: resolvedTripId
       });
 
       if (response.data) {
@@ -65,8 +78,13 @@ const Itinerary = ({ tripId }) => {
   };
 
   const exportPdf = async () => {
+    if (!resolvedTripId) {
+      toast.error('Trip ID is missing');
+      return;
+    }
+
     try {
-      const response = await API.get(`/itineraries/export/${tripId}`, {
+      const response = await API.get(`/itineraries/export/${resolvedTripId}`, {
         responseType: 'blob',
         headers: {
           'Accept': 'application/pdf'
@@ -77,7 +95,7 @@ const Itinerary = ({ tripId }) => {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `itinerary-${tripId}.pdf`);
+      link.setAttribute('download', `itinerary-${resolvedTripId}.pdf`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -113,6 +131,7 @@ const Itinerary = ({ tripId }) => {
             <button
               type="submit"
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition flex items-center gap-2"
+              disabled={!resolvedTripId}
             >
               <PlusCircle className="w-5 h-5" />
               <span className="hidden sm:inline">Add Activity</span>
@@ -123,13 +142,18 @@ const Itinerary = ({ tripId }) => {
         <button
           onClick={exportPdf}
           className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition flex items-center gap-2"
+          disabled={!resolvedTripId}
         >
           <Download className="w-5 h-5" />
           <span className="hidden sm:inline">Export PDF</span>
         </button>
       </div>
 
-      {items.length === 0 ? (
+      {!resolvedTripId ? (
+        <div className="bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-200 p-4 rounded-lg text-center">
+          Trip ID is missing. Please ensure you're viewing this page correctly.
+        </div>
+      ) : items.length === 0 ? (
         <p className="text-gray-500 text-center p-4">No activities planned yet.</p>
       ) : (
         <div className="space-y-4">

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Send, 
@@ -14,6 +14,32 @@ import data from '@emoji-mart/data';
 import Picker from '@emoji-mart/react';
 import { CreatePollForm } from '../../voting/Voting';
 
+// Enhanced debounce function with proper timeout handling
+const useDebounce = (callback, delay) => {
+  const timeoutRef = useRef(null);
+  
+  const debouncedCallback = useCallback((...args) => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    
+    timeoutRef.current = setTimeout(() => {
+      callback(...args);
+    }, delay);
+  }, [callback, delay]);
+  
+  // Clean up timeout when component unmounts
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
+  
+  return debouncedCallback;
+};
+
 const ChatInput = ({ onSend, onFileSelect, onCreatePoll, onInputChange }) => {
   const [message, setMessage] = useState('');
   const [showMenu, setShowMenu] = useState(false);
@@ -21,13 +47,35 @@ const ChatInput = ({ onSend, onFileSelect, onCreatePoll, onInputChange }) => {
   const [showPollModal, setShowPollModal] = useState(false);
   const fileInputRef = useRef(null);
   const imageInputRef = useRef(null);
+  const [isTyping, setIsTyping] = useState(false);
+  const [lastTypingTime, setLastTypingTime] = useState(0);
 
-  // Notify parent about input changes for typing indicator
-  useEffect(() => {
+  // Debounced function for notifying about typing
+  const debouncedTypingUpdate = useDebounce((typing) => {
     if (onInputChange) {
-      onInputChange(message);
+      onInputChange(typing);
     }
-  }, [message, onInputChange]);
+  }, 2000); // 2 second debounce
+
+  // Handle typing state changes
+  useEffect(() => {
+    const now = Date.now();
+    const typingState = message.length > 0;
+    
+    // Only update typing state if it changed or if sufficient time has passed
+    if (typingState !== isTyping || now - lastTypingTime > 2000) {
+      setIsTyping(typingState);
+      setLastTypingTime(now);
+      
+      if (onInputChange) {
+        // Immediate feedback for user's own UI
+        onInputChange(typingState);
+        
+        // Debounced update to server
+        debouncedTypingUpdate(typingState);
+      }
+    }
+  }, [message, isTyping, lastTypingTime, onInputChange, debouncedTypingUpdate]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -35,6 +83,13 @@ const ChatInput = ({ onSend, onFileSelect, onCreatePoll, onInputChange }) => {
     onSend(message);
     setMessage('');
     setShowEmojiPicker(false);
+    
+    // Explicitly set typing to false after sending
+    setIsTyping(false);
+    setLastTypingTime(Date.now());
+    if (onInputChange) {
+      onInputChange(false);
+    }
   };
 
   const handleFileChange = (e, isImage) => {

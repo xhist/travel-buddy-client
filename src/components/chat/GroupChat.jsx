@@ -72,6 +72,44 @@ const GroupChat = ({ tripId: propTripId }) => {
     return () => subscription.unsubscribe();
   }, [client, connected, resolvedTripId]);
 
+  // Subscribe to poll updates
+  useEffect(() => {
+    if (!client || !connected || !resolvedTripId) return;
+
+    const subscription = client.subscribe(
+      `/topic/trip/${resolvedTripId}/polls`,
+      (message) => {
+        try {
+          const updatedPoll = JSON.parse(message.body);
+          
+          // Update existing poll message or add new one
+          setMessages(prev => {
+            const pollMessageIndex = prev.findIndex(msg => 
+              msg.type === 'POLL' && msg.poll?.id === updatedPoll.id
+            );
+            
+            if (pollMessageIndex >= 0) {
+              // Update existing poll message
+              const updatedMessages = [...prev];
+              updatedMessages[pollMessageIndex] = {
+                ...updatedMessages[pollMessageIndex],
+                poll: updatedPoll
+              };
+              return updatedMessages;
+            }
+            
+            // If not found, it might be a new poll (shouldn't happen here, but just in case)
+            return prev;
+          });
+        } catch (error) {
+          console.error('Error handling poll update:', error);
+        }
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, [client, connected, resolvedTripId]);
+
   // Load initial messages
   useEffect(() => {
     if (resolvedTripId) {
@@ -191,7 +229,21 @@ const GroupChat = ({ tripId: propTripId }) => {
       const response = await API.get(`/chat/messages/trip/${resolvedTripId}`, { params: { limit: 20 } });
       if (response.data.length < 20) setHasMore(false);
       if (response.data.length > 0) {
-        setMessages(response.data);
+        // For each message of type POLL, fetch the poll details
+        const enrichedMessages = await Promise.all(response.data.map(async (message) => {
+          if (message.type === 'POLL' && message.pollId) {
+            try {
+              const pollResponse = await API.get(`/trips/${resolvedTripId}/polls/${message.pollId}`);
+              return { ...message, poll: pollResponse.data };
+            } catch (err) {
+              console.error('Error fetching poll details:', err);
+              return message;
+            }
+          }
+          return message;
+        }));
+        
+        setMessages(enrichedMessages);
         setOldestMessageId(response.data[0].id);
       }
     } catch (error) {
@@ -216,6 +268,20 @@ const GroupChat = ({ tripId: propTripId }) => {
       if (response.data.length === 0) {
         setHasMore(false);
       } else {
+        // For each message of type POLL, fetch the poll details
+        const enrichedMessages = await Promise.all(response.data.map(async (message) => {
+          if (message.type === 'POLL' && message.pollId) {
+            try {
+              const pollResponse = await API.get(`/trips/${resolvedTripId}/polls/${message.pollId}`);
+              return { ...message, poll: pollResponse.data };
+            } catch (err) {
+              console.error('Error fetching poll details:', err);
+              return message;
+            }
+          }
+          return message;
+        }));
+        
         setMessages(prev => [...response.data, ...prev]);
         setOldestMessageId(response.data[0].id);
       }
@@ -230,45 +296,73 @@ const GroupChat = ({ tripId: propTripId }) => {
   // --------------------
   // Message Actions
   // --------------------
-  const handleSendMessage = (content) => {
+  const handleSendMessage = (text) => {
     if (!client || !connected || !resolvedTripId) {
       toast.error('Not connected to chat server');
       return;
     }
-    try {
-      client.publish({
-        destination: `/app/chat.trip.${resolvedTripId}`,
-        body: JSON.stringify({
-          content,
-          type: 'TEXT',
-          timestamp: new Date().toISOString()
-        })
-      });
-    } catch (error) {
-      console.error('Error sending message:', error);
-      toast.error('Failed to send message');
-    }
+    // Construct the message payload with content and type
+    const messagePayload = {
+      content: {
+        type: 'TEXT',
+        text: text,
+        senderId: user.id,
+        senderUsername: user.username
+      },
+      type: 'TEXT',
+      timestamp: new Date().toISOString()
+    };
+    client.publish({
+      destination: `/app/chat.trip.${resolvedTripId}`,
+      body: JSON.stringify(messagePayload)
+    });
   };
 
+  // Handling file uploads (image or other files)
   const handleFileSelect = async (file) => {
     try {
+      // Upload file to server to get a URL
       const formData = new FormData();
       formData.append('file', file);
-      const response = await API.post('/chat/upload', formData, {
+      const uploadRes = await API.post('/chat/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       if (!client || !connected || !resolvedTripId) {
         toast.error('Not connected to chat server');
         return;
       }
+      // Determine message type based on file type (image vs generic file)
+      const msgType = file.type.startsWith('image/') ? 'IMAGE' : 'FILE';
+      // Build content object with appropriate fields
+      let contentObj;
+      if (msgType === 'IMAGE') {
+        contentObj = {
+          type: 'IMAGE',
+          imageUrl: uploadRes.data.fileUrl,
+          senderId: user.id,
+          senderUsername: user.username
+        };
+      } else {
+        contentObj = {
+          type: 'FILE',
+          fileUrl: uploadRes.data.fileUrl,
+          fileName: uploadRes.data.fileName,
+          fileType: file.type,
+          fileSize: file.size,
+          senderId: user.id,
+          senderUsername: user.username
+        };
+      }
+      // Publish the message with content and top-level type
+      const fileMessagePayload = {
+        content: contentObj,
+        type: msgType,
+        fileName: uploadRes.data.fileName,   // include fileName at top-level for convenience
+        timestamp: new Date().toISOString()
+      };
       client.publish({
         destination: `/app/chat.trip.${resolvedTripId}`,
-        body: JSON.stringify({
-          content: response.data.fileUrl,
-          fileName: response.data.fileName,
-          type: file.type.startsWith('image/') ? 'IMAGE' : 'FILE',
-          timestamp: new Date().toISOString()
-        })
+        body: JSON.stringify(fileMessagePayload)
       });
     } catch (error) {
       console.error('Error uploading file:', error);
@@ -276,34 +370,46 @@ const GroupChat = ({ tripId: propTripId }) => {
     }
   };
 
+  // Handling poll creation
   const handleCreatePoll = async (pollData) => {
     if (!resolvedTripId) {
       toast.error('Trip ID is missing');
       return;
     }
-
     try {
+      // Create the poll via REST API to get a poll ID
       const response = await API.post(`/trips/${resolvedTripId}/polls`, {
         question: pollData.question,
-        options: pollData.options.map(opt => opt.text)
+        options: pollData.options.map(opt => opt.text)  // ensure options are List<String>
       });
-      if (response && response.data) {
+      const newPoll = response.data;
+      if (newPoll) {
+        // Build poll content message
+        const pollContent = {
+          type: 'POLL',
+          question: pollData.question,
+          options: pollData.options,  // List of strings
+          finalized: pollData.finalized,
+          senderId: user.id,
+          senderUsername: user.username
+        };
+        const pollMessagePayload = {
+          content: pollContent,
+          type: 'POLL',              // include poll ID for reference
+          timestamp: new Date().toISOString()
+        };
         client.publish({
           destination: `/app/chat.trip.${resolvedTripId}`,
-          body: JSON.stringify({
-            type: 'POLL',
-            pollId: response.data.id || response.data,
-            timestamp: new Date().toISOString()
-          })
+          body: JSON.stringify(pollMessagePayload)
         });
         toast.success('Poll created successfully');
       }
     } catch (error) {
       console.error('Error creating poll:', error);
       toast.error('Failed to create poll');
-      throw error;
     }
   };
+
 
   const handleVote = async (pollId, optionId) => {
     if (!resolvedTripId) {
@@ -413,7 +519,11 @@ const GroupChat = ({ tripId: propTripId }) => {
             <OnlineUsers isOpen={true} onClose={() => {}} tripId={resolvedTripId} className="flex-1" />
           </div>
         </div>
-        <ChatInput onSend={handleSendMessage} onFileSelect={handleFileSelect} onCreatePoll={handleCreatePoll} />
+        <ChatInput 
+          onSend={handleSendMessage} 
+          onFileSelect={handleFileSelect} 
+          onCreatePoll={handleCreatePoll} 
+        />
       </div>
       {/* Mobile Sidebar */}
       <OnlineUsers isOpen={showSidebar} onClose={() => setShowSidebar(false)} tripId={resolvedTripId} className="lg:hidden" />

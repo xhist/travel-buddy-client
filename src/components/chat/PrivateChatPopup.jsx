@@ -2,11 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useStompClient } from '../../hooks/useStompClient';
 import { useAuth } from '../../hooks/useAuth';
 import API from '../../api/api';
-import { Message } from './layouts/Message';
+import { MessageList } from './layouts/MessageList';
 import ChatInput from './layouts/ChatInput';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, X, MinusCircle, MoreHorizontal, Loader } from 'lucide-react';
+import { ChevronDown, X, Loader } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+const MESSAGE_LIMIT = 20;
 
 const PrivateChatPopup = ({ 
   recipient, 
@@ -17,32 +19,36 @@ const PrivateChatPopup = ({
   onMinimize,
   minimized = false 
 }) => {
-  const messageListRef = useRef(null);
   const { client, connected } = useStompClient();
   const { user } = useAuth();
   const [isTyping, setIsTyping] = useState(false);
-  const [typingTimeout, setTypingTimeout] = useState(null);
   const [messages, setMessages] = useState([]);
   const [hasMore, setHasMore] = useState(true);
   const [oldestMessageId, setOldestMessageId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  const buttonPosition = useRef({ x: 0, y: 0 });
 
   // Track window width for responsive adjustments
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
     window.addEventListener('resize', handleResize);
+    
+    // Get position of chat button for animation
+    const chatButton = document.querySelector('.chat-toggle-button');
+    if (chatButton) {
+      const rect = chatButton.getBoundingClientRect();
+      buttonPosition.current = {
+        x: rect.right - 30,
+        y: rect.top + rect.height / 2
+      };
+    }
+    
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  useEffect(() => {
-    if (messageListRef.current && !minimized) {
-      messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
-    }
-  }, [messages, minimized]);
-
-  // Mark messages as read when chat is opened
+  // Mark messages as read when chat is opened/focused
   useEffect(() => {
     if (!minimized && onMarkAsRead) {
       onMarkAsRead();
@@ -56,11 +62,17 @@ const PrivateChatPopup = ({
       
       try {
         setLoading(true);
-        const response = await API.get(`/chat/messages/private/${recipient.username}`);
+        const response = await API.get(`/chat/messages/private/${recipient.username}`, {
+          params: { limit: MESSAGE_LIMIT }
+        });
         
         if (response.data.length > 0) {
           setMessages(response.data);
           setOldestMessageId(response.data[0].id);
+          
+          if (response.data.length < MESSAGE_LIMIT) {
+            setHasMore(false);
+          }
         } else {
           setHasMore(false);
         }
@@ -81,6 +93,8 @@ const PrivateChatPopup = ({
   useEffect(() => {
     if (!client || !connected || !recipient?.username) return;
 
+    const subscriptions = [];
+
     const messageSubscription = client.subscribe(
       `/user/queue/private`,
       (message) => {
@@ -91,7 +105,13 @@ const PrivateChatPopup = ({
           if ((receivedMessage.sender === recipient.username && receivedMessage.recipient === user.username) ||
               (receivedMessage.sender === user.username && receivedMessage.recipient === recipient.username)) {
             // Add the message to our state
-            setMessages(prev => [...prev, receivedMessage]);
+            setMessages(prev => {
+              // Check if message already exists
+              if (prev.some(msg => msg.id === receivedMessage.id)) {
+                return prev;
+              }
+              return [...prev, receivedMessage];
+            });
             
             // Mark as read if chat is open
             if (!minimized && onMarkAsRead) {
@@ -103,6 +123,8 @@ const PrivateChatPopup = ({
         }
       }
     );
+    
+    subscriptions.push(messageSubscription);
 
     const typingSubscription = client.subscribe(
       `/user/queue/typing`,
@@ -117,13 +139,17 @@ const PrivateChatPopup = ({
         }
       }
     );
+    
+    subscriptions.push(typingSubscription);
 
     return () => {
-      messageSubscription.unsubscribe();
-      typingSubscription.unsubscribe();
+      subscriptions.forEach(subscription => {
+        if (subscription) subscription.unsubscribe();
+      });
     };
   }, [client, connected, recipient?.username, user?.username, minimized, onMarkAsRead]);
 
+  // Load more messages (infinite scroll)
   const loadMoreMessages = async () => {
     if (!hasMore || loadingMore || !oldestMessageId || !recipient?.username) return;
     
@@ -132,7 +158,7 @@ const PrivateChatPopup = ({
       const response = await API.get(`/chat/messages/private/${recipient.username}`, {
         params: {
           before: oldestMessageId,
-          limit: 20
+          limit: MESSAGE_LIMIT
         }
       });
       
@@ -141,6 +167,10 @@ const PrivateChatPopup = ({
       } else {
         setMessages(prev => [...response.data, ...prev]);
         setOldestMessageId(response.data[0].id);
+        
+        if (response.data.length < MESSAGE_LIMIT) {
+          setHasMore(false);
+        }
       }
     } catch (error) {
       console.error('Error loading more messages:', error);
@@ -150,6 +180,7 @@ const PrivateChatPopup = ({
     }
   };
 
+  // Send a text message
   const handleSendMessage = (content) => {
     if (!client || !connected) {
       toast.error('Not connected to chat server');
@@ -157,15 +188,33 @@ const PrivateChatPopup = ({
     }
 
     try {
+      const messagePayload = {
+        content: {
+          type: 'TEXT',
+          text: content
+        },
+        recipient: recipient.username,
+        type: 'TEXT',
+        timestamp: new Date().toISOString()
+      };
+      
       client.publish({
         destination: '/app/chat.private',
-        body: JSON.stringify({
-          content,
-          recipient: recipient.username,
-          type: 'TEXT',
-          timestamp: new Date().toISOString()
-        })
+        body: JSON.stringify(messagePayload)
       });
+
+      // Optimistically add message to local state
+      const optimisticMessage = {
+        id: Date.now(), // Temporary ID
+        sender: user.username,
+        recipient: recipient.username,
+        content: { text: content, type: 'TEXT' },
+        type: 'TEXT',
+        timestamp: new Date().toISOString(),
+        reactions: []
+      };
+      
+      setMessages(prev => [...prev, optimisticMessage]);
       
       // Clear typing indicator
       sendTypingIndicator(false);
@@ -175,6 +224,7 @@ const PrivateChatPopup = ({
     }
   };
 
+  // Upload and send a file
   const handleFileSelect = async (file) => {
     try {
       const formData = new FormData();
@@ -188,13 +238,24 @@ const PrivateChatPopup = ({
         return;
       }
       
+      const msgType = file.type.startsWith('image/') ? 'IMAGE' : 'FILE';
+      
       client.publish({
         destination: '/app/chat.private',
         body: JSON.stringify({
-          content: response.data.fileUrl,
+          content: msgType === 'IMAGE' ? {
+            type: 'IMAGE',
+            imageUrl: response.data.fileUrl
+          } : {
+            type: 'FILE',
+            fileUrl: response.data.fileUrl,
+            fileName: response.data.fileName,
+            fileType: file.type,
+            fileSize: file.size
+          },
           fileName: response.data.fileName,
           recipient: recipient.username,
-          type: file.type.startsWith('image/') ? 'IMAGE' : 'FILE',
+          type: msgType,
           timestamp: new Date().toISOString()
         })
       });
@@ -204,6 +265,7 @@ const PrivateChatPopup = ({
     }
   };
 
+  // Add a reaction to a message
   const handleReaction = async (messageId, reactionType) => {
     try {
       const response = await API.post(`/chat/messages/${messageId}/reactions`, {
@@ -220,32 +282,7 @@ const PrivateChatPopup = ({
     }
   };
 
-  const handleInputChange = (text) => {
-    // Send typing indicator
-    if (text.length > 0) {
-      sendTypingIndicator(true);
-      
-      // Clear previous timeout
-      if (typingTimeout) {
-        clearTimeout(typingTimeout);
-      }
-      
-      // Set new timeout to stop typing indicator after 3 seconds
-      const timeout = setTimeout(() => {
-        sendTypingIndicator(false);
-      }, 3000);
-      
-      setTypingTimeout(timeout);
-    } else {
-      sendTypingIndicator(false);
-      
-      if (typingTimeout) {
-        clearTimeout(typingTimeout);
-        setTypingTimeout(null);
-      }
-    }
-  };
-
+  // Send typing status update
   const sendTypingIndicator = (typing) => {
     if (!client || !connected || !recipient?.username) return;
     
@@ -262,39 +299,111 @@ const PrivateChatPopup = ({
     }
   };
 
-  // Calculate position based on screen size and chat index
-  const getPosition = () => {
+  // Define genie animation variants for mobile - improved macOS style
+  const getMobilePosition = () => {
     const isMobile = windowWidth < 768;
     
     if (isMobile) {
+      // When minimized on mobile, prepare for animation toward button
+      if (minimized) {
+        return { 
+          position: 'fixed',
+          right: '1rem', 
+          bottom: '1rem',
+          width: 'calc(100% - 2rem)',
+          zIndex: 50 - position,
+          opacity: 1
+        };
+      }
+      // When maximized on mobile
       return { 
+        position: 'fixed',
         right: '1rem', 
-        bottom: `${4 + position * (minimized ? 3 : 24)}rem`, 
+        bottom: '1rem',
         width: 'calc(100% - 2rem)',
-        zIndex: 50 - position // Higher positions (more recent chats) get higher z-index
+        zIndex: 50 - position,
+        opacity: 1
       };
     }
     
+    // Desktop position
     return {
+      position: 'fixed',
       right: `${4 + position * 20}rem`,
       bottom: '1rem',
-      width: '18rem'
+      width: '18rem',
+      maxHeight: '24rem',
+      zIndex: 50 - position
     };
+  };
+  
+  // Enhanced genie animation with better movement
+  const getButtonTarget = () => {
+    const targetX = buttonPosition.current.x || window.innerWidth - 40;
+    const targetY = buttonPosition.current.y || window.innerHeight - 140;
+    
+    return {
+      x: windowWidth < 768 ? (targetX - 100) : 0,
+      y: windowWidth < 768 ? (targetY - 100) : 0,
+    };
+  };
+  
+  const genieAnimationVariants = {
+    maximized: {
+      height: windowWidth < 768 ? 'calc(80vh - 6rem)' : '24rem',
+      scale: 1,
+      opacity: 1,
+      x: 0,
+      y: 0,
+      originX: 0.5,
+      originY: 0.5
+    },
+    minimized: windowWidth < 768 ? {
+      height: '2.5rem',
+      scale: 0.05,
+      opacity: 0,
+      ...getButtonTarget(),
+      originX: 1,
+      originY: 1,
+      transition: {
+        type: "spring",
+        stiffness: 250,
+        damping: 25,
+        opacity: { 
+          duration: 0.3,
+          delay: 0.1
+        },
+        scale: {
+          duration: 0.4
+        }
+      }
+    } : {
+      height: '2.5rem',
+      scale: 1,
+      opacity: 1,
+      x: 0,
+      y: 0
+    }
   };
 
   if (!recipient) return null;
 
   return (
-    <div 
-      className={`fixed z-50 transition-all duration-300 ease-in-out rounded-t-lg shadow-lg flex flex-col`}
-      style={{
-        ...getPosition(),
-        height: minimized ? '2.5rem' : '24rem'
+    <motion.div 
+      className="fixed rounded-t-lg shadow-lg flex flex-col overflow-hidden"
+      style={getMobilePosition()}
+      animate={minimized ? "minimized" : "maximized"}
+      variants={genieAnimationVariants}
+      transition={{
+        type: "spring",
+        stiffness: 330,
+        damping: 30,
+        duration: 0.5
       }}
     >
       {/* Chat Header */}
       <div 
-        className={`flex items-center justify-between p-2 bg-blue-600 text-white rounded-t-lg cursor-pointer`}
+        className="flex items-center justify-between p-2 bg-blue-600 text-white rounded-t-lg cursor-pointer"
         onClick={() => onMinimize && onMinimize(!minimized)}
       >
         <div className="flex items-center gap-2">
@@ -307,7 +416,7 @@ const PrivateChatPopup = ({
             <div className="absolute bottom-0 right-0 w-2 h-2 bg-green-500 border-2 border-white rounded-full"></div>
           </div>
           <div className="flex flex-col">
-            <span className="font-medium truncate">{recipient.username}</span>
+            <span className="font-medium truncate max-w-[120px]">{recipient.username}</span>
             {isTyping && !minimized && (
               <span className="text-xs text-white/80">typing...</span>
             )}
@@ -351,56 +460,33 @@ const PrivateChatPopup = ({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="flex-1 flex flex-col bg-white dark:bg-gray-800"
+            className="flex-1 flex flex-col bg-white dark:bg-gray-800 overflow-hidden"
           >
-            <div 
-              ref={messageListRef}
-              className="flex-1 overflow-y-auto p-3"
-            >
-              {loading ? (
-                <div className="h-full flex items-center justify-center">
-                  <Loader className="w-6 h-6 animate-spin text-blue-600" />
-                </div>
-              ) : messages.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-gray-500 text-sm">
-                  Start a conversation with {recipient.username}
-                </div>
-              ) : (
-                <div className="flex flex-col-reverse">
-                  {messages.map((message, index) => (
-                    <Message
-                      key={message.id}
-                      message={message}
-                      currentUser={user}
-                      onReact={handleReaction}
-                      isLastInGroup={index === 0 || messages[index - 1].sender !== message.sender}
-                    />
-                  ))}
-                  {loadingMore && (
-                    <div className="text-center py-4">
-                      <Loader className="w-5 h-5 animate-spin text-blue-500 mx-auto" />
-                    </div>
-                  )}
-                  {hasMore && (
-                    <button
-                      onClick={loadMoreMessages}
-                      className="mx-auto my-2 px-4 py-1 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-full transition-colors"
-                    >
-                      Load older messages
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
+            {loading ? (
+              <div className="h-full flex items-center justify-center">
+                <Loader className="w-6 h-6 animate-spin text-blue-600" />
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col">
+                <MessageList
+                  messages={messages}
+                  currentUser={user}
+                  onReact={handleReaction}
+                  loadMore={loadMoreMessages}
+                  hasMore={hasMore}
+                  initialLoad={loadingMore}
+                />
+              </div>
+            )}
             <ChatInput
               onSend={handleSendMessage}
               onFileSelect={handleFileSelect}
-              onInputChange={handleInputChange}
+              onInputChange={(isTyping) => sendTypingIndicator(isTyping)}
             />
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </motion.div>
   );
 };
 

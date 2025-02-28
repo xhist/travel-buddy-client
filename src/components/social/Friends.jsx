@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import API from '../../api/api';
 import { useAuth } from '../../hooks/useAuth';
+import { useChatContext } from '../contexts/ChatContext';
 import { 
   Users, 
   UserPlus, 
@@ -107,6 +108,7 @@ const FriendRequest = ({ request, onAccept, onDecline }) => {
 
 const Friends = () => {
   const { user } = useAuth();
+  const { handleStartChat } = useChatContext();
   const [friends, setFriends] = useState([]);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -169,8 +171,11 @@ const Friends = () => {
   };
 
   const startChat = (friend) => {
-    // Navigate to chat or open chat popup
-    toast.success(`Starting chat with ${friend.username}`);
+    // Use the ChatContext to start a new chat
+    if (handleStartChat) {
+      handleStartChat(friend);
+      toast.success(`Starting chat with ${friend.username}`);
+    }
   };
 
   const filteredFriends = friends.filter(friend =>

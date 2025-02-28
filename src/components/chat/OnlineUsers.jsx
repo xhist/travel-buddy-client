@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   MessageCircle, 
   UserPlus, 
-  Clock, 
+  Clock,
   Search,
   ArrowLeft,
   Users,
@@ -20,77 +20,126 @@ const OnlineUsers = ({ isOpen, onClose, tripId, className = "" }) => {
   const [filteredUsers, setFilteredUsers] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [friendStatuses, setFriendStatuses] = useState({});
+  const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const { user: currentUser } = useAuth();
   const { client, connected } = useStompClient();
   const { handleStartChat } = useChatContext();
 
   // Subscribe to room-specific presence (if tripId provided) or global presence
   useEffect(() => {
-    if (!client || !connected) return;
+    if (!client || !connected) {
+      console.log("STOMP client not connected");
+      return;
+    }
 
-    // Different subscription topic based on whether we're in a trip chat room
-    const topic = tripId 
-      ? `/topic/room/${tripId}/users` 
-      : '/topic/presence';
+    console.log(`Subscribing to room presence for trip ${tripId}`);
+    setIsLoadingUsers(true);
 
-    const subscription = client.subscribe(topic, (message) => {
-      try {
-        const presenceData = JSON.parse(message.body);
-        
-        if (Array.isArray(presenceData)) {
-          // Full list of online users
-          const otherUsers = presenceData.filter(u => 
-            u.username !== currentUser?.username && 
-            u.id !== currentUser?.id
-          );
-          setUsers(otherUsers);
-        } else if (presenceData.username && presenceData.status) {
-          // Individual user status update
-          setUsers(prev => {
-            if (presenceData.status === 'ONLINE') {
-              if (!prev.some(u => u.username === presenceData.username || u.id === presenceData.id)) {
-                return [...prev, presenceData];
-              }
-              return prev;
-            } else {
-              return prev.filter(u => u.username !== presenceData.username && u.id !== presenceData.id);
+    // Clear users to avoid stale data
+    setUsers([]);
+
+    // Subscribe to room-specific presence updates for this trip
+    if (tripId) {
+      // Subscribe to user statuses for this room
+      const roomSubscription = client.subscribe(
+        `/topic/room/${tripId}/users`,
+        (message) => {
+          try {
+            console.log("Received room users update:", message.body);
+            const statusData = JSON.parse(message.body);
+            
+            if (Array.isArray(statusData)) {
+              // Convert UserPresenceStatus objects to user objects
+              const roomUsers = statusData
+                .filter(status => status.username !== currentUser?.username) // Filter out current user
+                .map(status => ({
+                  id: status.userId || status.username, // Fallback to username if id is missing
+                  username: status.username,
+                  profilePicture: status.profilePicture,
+                  lastSeen: status.lastSeen,
+                  typing: status.typing
+                }));
+              
+              setUsers(roomUsers);
+              setIsLoadingUsers(false);
             }
+          } catch (error) {
+            console.error('Error parsing room users data:', error);
+            setIsLoadingUsers(false);
+          }
+        }
+      );
+      
+      // Join the room manually to trigger the server to send the current list of online users
+      if (tripId) {
+        setTimeout(() => {
+          client.publish({ 
+            destination: `/app/room.${tripId}.join`,
+            body: JSON.stringify({})
+          });
+        }, 500);
+      }
+      
+      return () => {
+        roomSubscription.unsubscribe();
+        // Leave the room when component unmounts
+        if (client && connected) {
+          client.publish({
+            destination: `/app/room.${tripId}.leave`,
+            body: JSON.stringify({})
           });
         }
-      } catch (error) {
-        console.error('Error parsing presence data:', error);
-      }
-    });
-
-    // Request current online users - different endpoint based on context
-    if (tripId) {
-      // Join the room
-      client.publish({ 
-        destination: `/app/room.${tripId}.join`,
-        body: JSON.stringify({})
-      });
+      };
     } else {
+      // For global presence (not in a specific trip chat)
+      const globalSubscription = client.subscribe(
+        '/topic/presence',
+        (message) => {
+          try {
+            const presenceData = JSON.parse(message.body);
+            
+            if (Array.isArray(presenceData)) {
+              // Full list of online users
+              const otherUsers = presenceData.filter(u => 
+                u.username !== currentUser?.username && 
+                u.id !== currentUser?.id
+              );
+              setUsers(otherUsers);
+              setIsLoadingUsers(false);
+            } else if (presenceData.username && presenceData.status) {
+              // Individual user status update
+              setUsers(prev => {
+                if (presenceData.status === 'ONLINE') {
+                  if (!prev.some(u => u.username === presenceData.username || u.id === presenceData.id)) {
+                    return [...prev, presenceData];
+                  }
+                  return prev;
+                } else {
+                  return prev.filter(u => u.username !== presenceData.username && u.id !== presenceData.id);
+                }
+              });
+              setIsLoadingUsers(false);
+            }
+          } catch (error) {
+            console.error('Error parsing presence data:', error);
+            setIsLoadingUsers(false);
+          }
+        }
+      );
+      
+      // Request current online users - different endpoint based on context
       client.publish({ 
         destination: '/app/presence.getOnlineUsers',
         body: JSON.stringify({})
       });
-    }
-
-    return () => {
-      if (subscription) {
-        subscription.unsubscribe();
-      }
       
-      // Leave the room if needed
-      if (tripId && client && connected) {
-        client.publish({ 
-          destination: `/app/room.${tripId}.leave`,
-          body: JSON.stringify({})
-        });
-      }
-    };
+      return () => {
+        globalSubscription.unsubscribe();
+      };
+    }
   }, [client, connected, currentUser?.id, currentUser?.username, tripId]);
 
+  // Filter users based on search query
   useEffect(() => {
     setFilteredUsers(
       users.filter(u => 
@@ -100,14 +149,15 @@ const OnlineUsers = ({ isOpen, onClose, tripId, className = "" }) => {
     );
   }, [users, searchQuery]);
 
+  // Load friend statuses for each user
   useEffect(() => {
     const loadFriendStatuses = async () => {
       const statuses = {};
       for (const user of users) {
-        if (user.username) {
+        if (user.username && user.username !== currentUser?.username) {
           try {
             const response = await API.get(`/friends/status/${user.username}`);
-            statuses[user.id] = response.data;
+            statuses[user.id || user.username] = response.data;
           } catch (err) {
             console.error(`Error loading friend status for ${user.username}:`, err);
           }
@@ -149,7 +199,7 @@ const OnlineUsers = ({ isOpen, onClose, tripId, className = "" }) => {
   };
 
   const UserCard = ({ user }) => {
-    const friendStatus = friendStatuses[user.id] || {};
+    const friendStatus = friendStatuses[user.id || user.username] || {};
     const [isHovered, setIsHovered] = useState(false);
     const username = user.username || user.name;
 
@@ -195,7 +245,7 @@ const OnlineUsers = ({ isOpen, onClose, tripId, className = "" }) => {
               className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400"
             >
               <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
-              Online now
+              {user.typing ? 'Typing...' : 'Online now'}
             </motion.div>
           </div>
 
@@ -297,17 +347,30 @@ const OnlineUsers = ({ isOpen, onClose, tripId, className = "" }) => {
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto p-4">
-                <div className="space-y-3">
-                  {filteredUsers.length > 0 ? (
-                    filteredUsers.map(user => <UserCard key={user.id} user={user} />)
-                  ) : (
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center py-8">
-                      <p className="text-gray-500 dark:text-gray-400">
-                        {searchQuery ? 'No users match your search' : 'No users online'}
-                      </p>
-                    </motion.div>
-                  )}
-                </div>
+                {isLoadingUsers ? (
+                  <div className="flex justify-center items-center h-24">
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {filteredUsers.length > 0 ? (
+                      filteredUsers.map(user => (
+                        <UserCard key={user.id || user.username} user={user} />
+                      ))
+                    ) : (
+                      <motion.div 
+                        initial={{ opacity: 0 }} 
+                        animate={{ opacity: 1 }} 
+                        exit={{ opacity: 0 }} 
+                        className="text-center py-8"
+                      >
+                        <p className="text-gray-500 dark:text-gray-400">
+                          {searchQuery ? 'No users match your search' : 'No users online'}
+                        </p>
+                      </motion.div>
+                    )}
+                  </div>
+                )}
               </div>
             </motion.div>
           </>
@@ -333,17 +396,30 @@ const OnlineUsers = ({ isOpen, onClose, tripId, className = "" }) => {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-4">
-          <div className="space-y-3">
-            {filteredUsers.length > 0 ? (
-              filteredUsers.map(user => <UserCard key={user.id} user={user} />)
-            ) : (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center py-8">
-                <p className="text-gray-500 dark:text-gray-400">
-                  {searchQuery ? 'No users match your search' : 'No users online'}
-                </p>
-              </motion.div>
-            )}
-          </div>
+          {isLoadingUsers ? (
+            <div className="flex justify-center items-center h-24">
+              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredUsers.length > 0 ? (
+                filteredUsers.map(user => (
+                  <UserCard key={user.id || user.username} user={user} />
+                ))
+              ) : (
+                <motion.div 
+                  initial={{ opacity: 0 }} 
+                  animate={{ opacity: 1 }} 
+                  exit={{ opacity: 0 }} 
+                  className="text-center py-8"
+                >
+                  <p className="text-gray-500 dark:text-gray-400">
+                    {searchQuery ? 'No users match your search' : 'No users online'}
+                  </p>
+                </motion.div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </>

@@ -42,6 +42,41 @@ const StarRating = ({ rating, onRatingChange, readonly = false }) => {
   );
 };
 
+// Function to properly format dates that can be used in the Profile component
+const formatReviewDate = (dateString) => {
+  if (!dateString) return 'Recently';
+  
+  try {
+    // Handle different date formats
+    let date;
+    
+    if (Array.isArray(dateString)) {
+      // Handle Java LocalDateTime format [year, month, day, hour, minute, second, nano]
+      const [year, month, day, hour = 0, minute = 0] = dateString;
+      date = new Date(year, month - 1, day, hour, minute);
+    } else if (typeof dateString === 'string') {
+      // Attempt to parse the string date
+      date = new Date(dateString);
+    } else {
+      date = new Date(dateString);
+    }
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      return 'Recently';
+    }
+    
+    return date.toLocaleDateString();
+  } catch (error) {
+    console.error("Error formatting date:", error);
+    return 'Recently';
+  }
+};
+
+// This function should be added to the Profile.jsx file and used where review dates are displayed,
+// replacing the direct use of new Date(review.dateReviewed).toLocaleDateString() with:
+// formatReviewDate(review.dateReviewed)
+
 const Profile = () => {
   const { username } = useParams();
   const { user: currentUser } = useAuth();
@@ -486,7 +521,7 @@ const Profile = () => {
                     <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
                       <Clock className="w-4 h-4" />
                       <span className="text-sm">
-                        {review.dateReviewed ? new Date(review.dateReviewed).toLocaleDateString() : 'Recently'}
+                        {formatReviewDate(review.dateReviewed)}
                       </span>
                     </div>
                   </div>
